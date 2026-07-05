@@ -1,0 +1,13 @@
+[package]
+name = "via-kicad"
+version.workspace = true
+edition.workspace = true
+description = "KiCad import and export helpers for via."
+license.workspace = true
+
+[dependencies]
+via-core = { path = "../via-core" }
+
+[dev-dependencies]
+via-footprint = { path = "../via-footprint" }
+

@@ -1,0 +1,9 @@
+[package]
+name = "via-parts"
+version.workspace = true
+edition.workspace = true
+description = "Generic reusable component definitions for VIA designs."
+license.workspace = true
+
+[dependencies]
+via-core = { path = "../via-core" }

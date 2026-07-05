@@ -1,0 +1,9 @@
+[package]
+name = "via-core"
+version.workspace = true
+edition.workspace = true
+description = "Core Rust circuit model for via."
+license.workspace = true
+
+[dependencies]
+via-footprint-ir = { path = "../via-footprint-ir" }

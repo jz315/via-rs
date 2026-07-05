@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/via",
+    "crates/via-core",
+    "crates/via-footprint-ir",
+    "crates/via-footprint",
+    "crates/via-kicad",
+    "crates/via-lceda-pro",
+    "crates/via-parts",
+    "crates/via-parts-harmonic",
+    "crates/via-patterns-harmonic",
+    "crates/via-patterns-motion",
+    "crates/via-examples",
+    "crates/via-cli",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"

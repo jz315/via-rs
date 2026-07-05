@@ -1,0 +1,14 @@
+[package]
+name = "via"
+version.workspace = true
+edition.workspace = true
+description = "User-facing facade crate for the VIA Rust EDA library."
+license.workspace = true
+
+[dependencies]
+via-core = { path = "../via-core" }
+via-footprint-ir = { path = "../via-footprint-ir" }
+via-parts = { path = "../via-parts" }
+via-parts-harmonic = { path = "../via-parts-harmonic" }
+via-patterns-harmonic = { path = "../via-patterns-harmonic" }
+via-patterns-motion = { path = "../via-patterns-motion" }

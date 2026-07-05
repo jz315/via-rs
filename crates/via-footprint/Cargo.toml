@@ -1,0 +1,9 @@
+[package]
+name = "via-footprint"
+version.workspace = true
+edition.workspace = true
+description = "Geometry model and generators for KiCad footprints."
+license.workspace = true
+
+[dependencies]
+via-footprint-ir = { path = "../via-footprint-ir" }

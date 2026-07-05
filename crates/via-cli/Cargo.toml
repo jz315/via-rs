@@ -1,0 +1,19 @@
+[package]
+name = "via-cli"
+version.workspace = true
+edition.workspace = true
+description = "Thin CLI wrapper for via examples, checks, and exports."
+license.workspace = true
+
+[[bin]]
+name = "via"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+via-core = { path = "../via-core" }
+via-examples = { path = "../via-examples" }
+via-kicad = { path = "../via-kicad" }
+via-lceda-pro = { path = "../via-lceda-pro" }
+via-parts-harmonic = { path = "../via-parts-harmonic" }

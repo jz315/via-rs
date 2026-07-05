@@ -1,0 +1,10 @@
+[package]
+name = "via-lceda-pro"
+version.workspace = true
+edition.workspace = true
+description = "LCEDA Pro export helpers for via."
+license.workspace = true
+
+[dependencies]
+via-core = { path = "../via-core" }
+via-footprint-ir = { path = "../via-footprint-ir" }

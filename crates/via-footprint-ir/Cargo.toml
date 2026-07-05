@@ -1,0 +1,9 @@
+[package]
+name = "via-footprint-ir"
+version.workspace = true
+edition.workspace = true
+description = "Low-level footprint intermediate representation for via."
+license.workspace = true
+
+[dependencies]
+
