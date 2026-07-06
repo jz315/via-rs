@@ -108,7 +108,7 @@ pub fn write_kicad_pcb(
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).map_err(|err| via_core::Error::Io(err.to_string()))?;
     }
-    let text = render_kicad_pcb(board, layout, footprint_library_name, official_footprints);
+    let text = render_kicad_pcb(board, layout, footprint_library_name, official_footprints)?;
     std::fs::write(out, text).map_err(|err| via_core::Error::Io(err.to_string()))
 }
 
@@ -117,7 +117,7 @@ fn render_kicad_pcb(
     layout: &Layout,
     footprint_library_name: &str,
     official_footprints: &BTreeMap<String, String>,
-) -> String {
+) -> via_core::Result<String> {
     let net_ids = net_ids(board);
     let pad_nets = pad_net_map(board);
     let mut out = String::new();
@@ -162,7 +162,7 @@ fn render_kicad_pcb(
             footprint_irs.get(module.footprint_name().unwrap_or("")),
             footprint_library_name,
             official_footprints,
-        ));
+        )?);
     }
 
     let outline_points = outline_points(layout);
@@ -209,7 +209,7 @@ fn render_kicad_pcb(
     }
 
     out.push_str(")\n");
-    out
+    Ok(out)
 }
 
 fn render_setup(board: &Board) -> String {
@@ -292,8 +292,13 @@ fn render_footprint(
     generated: Option<&GeneratedFootprintIr>,
     footprint_library_name: &str,
     official_footprints: &BTreeMap<String, String>,
-) -> String {
-    let footprint_name = module.footprint_name().unwrap_or("VIA_PLACEHOLDER");
+) -> via_core::Result<String> {
+    let footprint_name = module.footprint_name().ok_or_else(|| {
+        via_core::Error::Io(format!(
+            "{} cannot be exported to PCB because it has no footprint",
+            module.refdes()
+        ))
+    })?;
     if generated.is_none() {
         if let Some(kicad_mod) = official_footprints.get(footprint_name) {
             return kicad_mod_asset::render(AssetFootprintRender {
@@ -308,6 +313,11 @@ fn render_footprint(
                 footprint_library_name,
             });
         }
+        return Err(via_core::Error::Io(format!(
+            "{} references footprint {} but PCB export has no generated footprint IR or loaded KiCad asset",
+            module.refdes(),
+            footprint_name
+        )));
     }
 
     let mut out = String::new();
@@ -343,7 +353,7 @@ fn render_footprint(
         "    (property \"Description\" \"\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"{}\") (effects (font (size 1.27 1.27))))\n",
         stable_uuid(&format!("prop-description:{}", module.refdes())),
     ));
-    if module.requires_verification() || generated.is_none() {
+    if module.requires_verification() {
         out.push_str("    (property \"VIA_VERIFY\" \"true\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"");
         out.push_str(&stable_uuid(&format!("verify:{}", module.refdes())));
         out.push_str("\") (effects (font (size 1 1) (thickness 0.15))))\n");
@@ -400,29 +410,9 @@ fn render_footprint(
                 pad_nets,
             }));
         }
-    } else {
-        let fallback_layers = ["*.Cu".to_owned(), "*.Mask".to_owned()];
-        for (idx, pad) in module.modeled_pads().into_iter().enumerate() {
-            out.push_str(&render_pad(PadRender {
-                module,
-                pad: &pad,
-                x: (idx as f64) * 2.54,
-                y: 0.0,
-                w: 1.7,
-                h: 1.7,
-                drill: Some(0.9),
-                drill_w: None,
-                drill_h: None,
-                kind: "thru_hole",
-                shape: "circle",
-                layers: &fallback_layers,
-                net_ids,
-                pad_nets,
-            }));
-        }
     }
     out.push_str("  )\n");
-    out
+    Ok(out)
 }
 
 struct PadRender<'a> {
@@ -697,7 +687,7 @@ mod tests {
             tracks: Vec::new(),
         };
 
-        let text = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new());
+        let text = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap();
 
         assert!(text.contains("(last_trace_width 0.42)"));
         assert!(text.contains("(trace_clearance 0.23)"));
@@ -752,7 +742,7 @@ mod tests {
             tracks: Vec::new(),
         };
 
-        let text = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new());
+        let text = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap();
 
         assert!(text.contains("(last_trace_width 0.3)"));
         assert!(text.contains("(trace_clearance 0.2)"));
@@ -767,6 +757,36 @@ mod tests {
         assert!(text.contains("(via (at 30 10) (size 0.8) (drill 0.4)"));
         assert!(text.contains("(layer \"Edge.Cuts\")"));
         assert_unique_uuids(&text);
+    }
+
+    #[test]
+    fn pcb_export_rejects_missing_footprint_geometry() {
+        let mut design = Design::new("missing_geometry");
+        design
+            .add(
+                via_core::part("J1", "external")
+                    .footprint("External_Footprint")
+                    .pin(via_core::pin("1").passive().pad("1")),
+            )
+            .unwrap();
+        let board = design.build().unwrap();
+        let layout = Layout {
+            board: "missing_geometry".to_owned(),
+            modules: vec![LayoutModule {
+                refdes: "J1".to_owned(),
+                x: 0.0,
+                y: 0.0,
+                rotation: 0.0,
+                status: None,
+            }],
+            outline: None,
+            copper: LayoutCopper::default(),
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("no generated footprint IR or loaded KiCad asset"));
     }
 
     fn assert_unique_uuids(text: &str) {

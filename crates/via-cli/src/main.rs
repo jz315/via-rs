@@ -5,6 +5,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 mod json;
 mod kicad_export;
 mod kicad_mod_asset;
+mod kicad_sexp;
 mod pcb_export;
 mod report;
 
@@ -459,6 +460,7 @@ fn export_lceda_command(
 fn export_pcb_command(project_path: Option<PathBuf>, args: ExportPcbArgs) -> via_core::Result<()> {
     let project = via_project::Project::discover(project_path)?;
     let (_, board) = project.build_design(args.design.as_deref())?;
+    board.check()?;
     let layout = args
         .layout
         .map(|path| project.resolve_path(path))

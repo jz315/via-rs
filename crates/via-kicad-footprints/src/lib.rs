@@ -32,6 +32,9 @@ pub enum Error {
     UnsafeManifestPath {
         path: String,
     },
+    UnsafeFootprintName {
+        name: String,
+    },
     Sha256Mismatch {
         path: PathBuf,
         expected: String,
@@ -67,6 +70,9 @@ impl fmt::Display for Error {
             ),
             Error::UnsafeManifestPath { path } => {
                 write!(f, "manifest footprint path is not safe: {path}")
+            }
+            Error::UnsafeFootprintName { name } => {
+                write!(f, "footprint name is not safe as a file name: {name}")
             }
             Error::Sha256Mismatch {
                 path,
@@ -237,7 +243,7 @@ impl FootprintCache {
         let source = self.footprint_path(id)?;
         let pretty_dir = pretty_dir.as_ref();
         std::fs::create_dir_all(pretty_dir)?;
-        let destination = pretty_dir.join(format!("{}.kicad_mod", id.name));
+        let destination = pretty_dir.join(footprint_file_name(&id.name)?);
         std::fs::copy(source, &destination)?;
         Ok(destination)
     }
@@ -311,6 +317,20 @@ pub fn cache_dir_for_version(version: &str) -> PathBuf {
         .join("via")
         .join("kicad-footprints")
         .join(version)
+}
+
+pub fn footprint_file_name(name: &str) -> Result<String> {
+    let unsafe_name = name.trim().is_empty()
+        || matches!(name, "." | "..")
+        || name.chars().any(|ch| {
+            ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        });
+    if unsafe_name {
+        return Err(Error::UnsafeFootprintName {
+            name: name.to_owned(),
+        });
+    }
+    Ok(format!("{name}.kicad_mod"))
 }
 
 pub fn import_from_kicad_dir(
@@ -494,6 +514,19 @@ mod tests {
         let err = safe_relative_path("../bad.kicad_mod").unwrap_err();
 
         assert!(format!("{err}").contains("not safe"));
+    }
+
+    #[test]
+    fn rejects_unsafe_footprint_file_names() {
+        for name in ["../Bad", r"Bad\Name", "Lib:Bad", ""] {
+            let err = footprint_file_name(name).unwrap_err();
+            assert!(format!("{err}").contains("not safe"), "{name}");
+        }
+
+        assert_eq!(
+            footprint_file_name("CP_Radial_D6.3mm_P2.50mm").unwrap(),
+            "CP_Radial_D6.3mm_P2.50mm.kicad_mod"
+        );
     }
 
     fn temp_root(prefix: &str) -> PathBuf {

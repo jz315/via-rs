@@ -102,7 +102,9 @@ fn write_embedded_footprints(
     let mut manual_footprints = 0;
     for footprint in board.footprints() {
         if let Some(ir) = footprint.ir() {
-            ir.write_kicad_mod(pretty_dir.join(format!("{}.kicad_mod", footprint.name())))
+            let file_name = via_kicad_footprints::footprint_file_name(footprint.name())
+                .map_err(|err| via_core::Error::Io(err.to_string()))?;
+            ir.write_kicad_mod(pretty_dir.join(file_name))
                 .map_err(|err| via_core::Error::Io(err.to_string()))?;
             generated_footprints += 1;
             continue;

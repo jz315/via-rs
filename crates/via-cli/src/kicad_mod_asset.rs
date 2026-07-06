@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use via_core::model::Part;
 
-use crate::json::escape_json;
+use crate::kicad_sexp::{self, Sexp};
 
 pub(crate) struct AssetFootprintRender<'a> {
     pub(crate) footprint_name: &'a str,
@@ -16,7 +16,7 @@ pub(crate) struct AssetFootprintRender<'a> {
     pub(crate) footprint_library_name: &'a str,
 }
 
-pub(crate) fn render(input: AssetFootprintRender<'_>) -> String {
+pub(crate) fn render(input: AssetFootprintRender<'_>) -> via_core::Result<String> {
     let AssetFootprintRender {
         footprint_name,
         kicad_mod,
@@ -28,50 +28,72 @@ pub(crate) fn render(input: AssetFootprintRender<'_>) -> String {
         pad_nets,
         footprint_library_name,
     } = input;
-    let mut out = String::new();
-    out.push_str(&format!(
-        "  (footprint \"{}:{}\"\n",
-        escape_sexp(footprint_library_name),
-        escape_sexp(footprint_name)
-    ));
-    out.push_str("    (layer \"F.Cu\")\n");
-    out.push_str(&format!(
-        "    (uuid \"{}\")\n",
-        stable_uuid(&format!("footprint:{}", module.refdes()))
-    ));
-    out.push_str(&format!("    (at {} {} {})\n", n(x), n(y), n(rotation)));
 
-    let lines = kicad_mod.lines().collect::<Vec<_>>();
-    let mut idx = 1;
+    let source = kicad_sexp::parse_one(kicad_mod).map_err(|err| {
+        via_core::Error::Io(format!(
+            "failed to parse KiCad footprint asset {footprint_name}: {err}"
+        ))
+    })?;
+    let source_items = match source {
+        Sexp::List(items) if items.first().and_then(Sexp::as_atom) == Some("footprint") => items,
+        _ => {
+            return Err(via_core::Error::Io(format!(
+                "KiCad footprint asset {footprint_name} does not start with a footprint node"
+            )));
+        }
+    };
+
+    let mut children = vec![
+        Sexp::atom("footprint"),
+        Sexp::string(format!("{footprint_library_name}:{footprint_name}")),
+        list1("layer", Sexp::string("F.Cu")),
+        list1(
+            "uuid",
+            Sexp::string(stable_uuid(&format!("footprint:{}", module.refdes()))),
+        ),
+        Sexp::list(vec![
+            Sexp::atom("at"),
+            Sexp::atom(n(x)),
+            Sexp::atom(n(y)),
+            Sexp::atom(n(rotation)),
+        ]),
+    ];
     let mut uuid_index = 0usize;
     let mut has_datasheet_property = false;
     let mut has_description_property = false;
-    while idx + 1 < lines.len() {
-        let line = lines[idx];
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("(version ")
-            || trimmed.starts_with("(generator ")
-            || (idx <= 3 && trimmed.starts_with("(layer "))
-        {
-            idx += 1;
+
+    for child in source_items.into_iter().skip(2) {
+        let Some(head) = child.list_name().map(str::to_owned) else {
+            children.push(child);
+            continue;
+        };
+        if is_skipped_footprint_header(&head) {
             continue;
         }
 
-        if !trimmed.starts_with('(') {
-            out.push_str("    ");
-            out.push_str(line);
-            out.push('\n');
-            idx += 1;
-            continue;
+        let mut child = child;
+        match head.as_str() {
+            "property" => {
+                if let Some(name) = property_name(&child).map(str::to_owned) {
+                    match name.as_str() {
+                        "Datasheet" => has_datasheet_property = true,
+                        "Description" => has_description_property = true,
+                        "Reference" => rewrite_property(&mut child, module.refdes(), false),
+                        "Value" => rewrite_property(&mut child, module.value(), true),
+                        _ => {}
+                    }
+                }
+            }
+            "fp_text" => match fp_text_kind(&child) {
+                Some("reference") => rewrite_fp_text(&mut child, module.refdes(), false),
+                Some("value") => rewrite_fp_text(&mut child, module.value(), true),
+                _ => {}
+            },
+            "pad" => rewrite_pad(&mut child, module, net_ids, pad_nets),
+            _ => {}
         }
 
-        let block = collect_sexp_block(&lines, &mut idx);
-        if trimmed.starts_with("(property \"Datasheet\" ") {
-            has_datasheet_property = true;
-        } else if trimmed.starts_with("(property \"Description\" ") {
-            has_description_property = true;
-        }
-        let uuid = uuid_kind(block.first().copied().unwrap_or_default()).map(|kind| {
+        if let Some(kind) = uuid_kind(&child) {
             let uuid = stable_uuid(&format!(
                 "asset:{}:{}:{}:{}",
                 module.refdes(),
@@ -80,124 +102,92 @@ pub(crate) fn render(input: AssetFootprintRender<'_>) -> String {
                 uuid_index
             ));
             uuid_index += 1;
-            uuid
-        });
-
-        if trimmed.starts_with("(pad ") {
-            out.push_str(&render_asset_pad_block(
-                &block,
-                module,
-                net_ids,
-                pad_nets,
-                uuid.as_deref(),
-            ));
-            continue;
+            set_child_list(&mut child, "uuid", vec![Sexp::string(uuid)]);
         }
-
-        if trimmed.starts_with("(property \"Value\" ") {
-            out.push_str(&render_asset_property_block(
-                &block,
-                module.value(),
-                true,
-                uuid.as_deref(),
-            ));
-            continue;
-        }
-
-        if trimmed.starts_with("(fp_text value ") {
-            out.push_str(&render_asset_fp_text_block(
-                &block,
-                module.value(),
-                true,
-                uuid.as_deref(),
-            ));
-            continue;
-        }
-
-        if trimmed.starts_with("(property \"Reference\" ") {
-            out.push_str(&render_asset_property_block(
-                &block,
-                module.refdes(),
-                false,
-                uuid.as_deref(),
-            ));
-            continue;
-        }
-
-        if trimmed.starts_with("(fp_text reference ") {
-            out.push_str(&render_asset_fp_text_block(
-                &block,
-                module.refdes(),
-                false,
-                uuid.as_deref(),
-            ));
-            continue;
-        }
-
-        out.push_str(&render_asset_block(&block, None, &[], uuid.as_deref()));
+        children.push(child);
     }
 
     if !has_datasheet_property {
-        out.push_str(&render_standard_property(
+        children.push(standard_property(
             "Datasheet",
             "",
             &stable_uuid(&format!("datasheet:{}", module.refdes())),
+            1.27,
         ));
     }
     if !has_description_property {
-        out.push_str(&render_standard_property(
+        children.push(standard_property(
             "Description",
             "",
             &stable_uuid(&format!("description:{}", module.refdes())),
+            1.27,
         ));
     }
     if module.requires_verification() {
-        out.push_str("    (property \"VIA_VERIFY\" \"true\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"");
-        out.push_str(&stable_uuid(&format!("verify:{}", module.refdes())));
-        out.push_str("\") (effects (font (size 1 1) (thickness 0.15))))\n");
+        children.push(standard_property(
+            "VIA_VERIFY",
+            "true",
+            &stable_uuid(&format!("verify:{}", module.refdes())),
+            1.0,
+        ));
     }
-    out.push_str("  )\n");
-    out
+
+    Ok(kicad_sexp::render(&Sexp::list(children), 2))
 }
 
-fn render_standard_property(name: &str, value: &str, uuid: &str) -> String {
-    format!(
-        "    (property \"{}\" \"{}\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"{}\") (effects (font (size 1.27 1.27))))\n",
-        escape_sexp(name),
-        escape_sexp(value),
-        uuid
-    )
+fn is_skipped_footprint_header(head: &str) -> bool {
+    matches!(head, "version" | "generator" | "layer")
 }
 
-fn collect_sexp_block<'a>(lines: &[&'a str], idx: &mut usize) -> Vec<&'a str> {
-    let mut block = Vec::new();
-    let mut depth = 0isize;
-    while *idx < lines.len() {
-        let line = lines[*idx];
-        depth += line.chars().filter(|ch| *ch == '(').count() as isize;
-        depth -= line.chars().filter(|ch| *ch == ')').count() as isize;
-        block.push(line);
-        *idx += 1;
-        if depth <= 0 {
-            break;
-        }
+fn property_name(node: &Sexp) -> Option<&str> {
+    let Sexp::List(items) = node else {
+        return None;
+    };
+    items.get(1).and_then(Sexp::as_atom)
+}
+
+fn fp_text_kind(node: &Sexp) -> Option<&str> {
+    let Sexp::List(items) = node else {
+        return None;
+    };
+    items.get(1).and_then(Sexp::as_atom)
+}
+
+fn rewrite_property(node: &mut Sexp, value: &str, hide: bool) {
+    let Sexp::List(items) = node else {
+        return;
+    };
+    if items.len() >= 3 {
+        items[2] = Sexp::string(value);
     }
-    block
+    if hide {
+        ensure_property_hidden(items);
+    }
 }
 
-fn render_asset_pad_block(
-    block: &[&str],
+fn rewrite_fp_text(node: &mut Sexp, value: &str, hide: bool) {
+    let Sexp::List(items) = node else {
+        return;
+    };
+    if items.len() >= 3 {
+        items[2] = Sexp::string(value);
+    }
+    if hide && !items.iter().any(|item| item.as_atom() == Some("hide")) {
+        items.push(Sexp::atom("hide"));
+    }
+}
+
+fn rewrite_pad(
+    node: &mut Sexp,
     module: &Part,
     net_ids: &BTreeMap<String, usize>,
     pad_nets: &BTreeMap<(String, String), (String, String)>,
-    uuid: Option<&str>,
-) -> String {
-    let Some(first_line) = block.first() else {
-        return String::new();
+) {
+    let Some(pad) = pad_name(node).map(str::to_owned) else {
+        return;
     };
-    let pad = parse_pad_name(first_line).unwrap_or_default();
     let (net_name, pin_name) = pad_nets
-        .get(&(module.refdes().to_owned(), pad.clone()))
+        .get(&(module.refdes().to_owned(), pad))
         .cloned()
         .unwrap_or_else(|| (String::new(), String::new()));
     let net = net_name
@@ -206,231 +196,112 @@ fn render_asset_pad_block(
         .or_else(|| net_ids.get(&net_name).copied())
         .unwrap_or(0);
 
-    let mut insertions = Vec::new();
-    if !net_name.is_empty() {
-        insertions.push(format!("(net {net} \"{}\")", escape_sexp(&net_name)));
-    }
-    if !pin_name.is_empty() {
-        insertions.push(format!("(pinfunction \"{}\")", escape_sexp(&pin_name)));
-    }
-    insertions.push("(pintype \"passive\")".to_owned());
-    render_asset_block(block, None, &insertions, uuid)
-}
-
-fn render_asset_property_block(
-    block: &[&str],
-    value: &str,
-    hide: bool,
-    uuid: Option<&str>,
-) -> String {
-    let has_hide = block
-        .iter()
-        .any(|line| line.trim_start().starts_with("(hide "));
-    let insertions = if hide && !has_hide {
-        vec!["(hide yes)".to_owned()]
+    if net_name.is_empty() {
+        remove_child_lists(node, "net");
     } else {
-        Vec::new()
-    };
-    render_asset_block(
-        block,
-        Some(&|line| replace_property_value_line(line, value)),
-        &insertions,
-        uuid,
-    )
-}
-
-fn render_asset_fp_text_block(
-    block: &[&str],
-    value: &str,
-    hide: bool,
-    uuid: Option<&str>,
-) -> String {
-    let has_hide = block
-        .iter()
-        .any(|line| line.split_whitespace().any(|atom| atom == "hide"));
-    let insertions = if hide && !has_hide {
-        vec!["hide".to_owned()]
-    } else {
-        Vec::new()
-    };
-    render_asset_block(
-        block,
-        Some(&|line| replace_fp_text_value_line(line, value)),
-        &insertions,
-        uuid,
-    )
-}
-
-fn render_asset_block(
-    block: &[&str],
-    rewrite_first_line: Option<&dyn Fn(&str) -> String>,
-    insertions: &[String],
-    uuid: Option<&str>,
-) -> String {
-    let mut lines = block
-        .iter()
-        .enumerate()
-        .map(|(idx, line)| {
-            if idx == 0 {
-                rewrite_first_line
-                    .map(|rewrite| rewrite(line))
-                    .unwrap_or_else(|| (*line).to_owned())
-            } else {
-                (*line).to_owned()
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let mut has_uuid = false;
-    if let Some(uuid) = uuid {
-        for line in &mut lines {
-            if line.contains("(uuid \"") {
-                *line = replace_uuid_line(line, uuid);
-                has_uuid = true;
-                break;
-            }
-        }
+        set_child_list(
+            node,
+            "net",
+            vec![Sexp::atom(net.to_string()), Sexp::string(net_name)],
+        );
     }
+    if pin_name.is_empty() {
+        remove_child_lists(node, "pinfunction");
+    } else {
+        set_child_list(node, "pinfunction", vec![Sexp::string(pin_name)]);
+    }
+    set_child_list(node, "pintype", vec![Sexp::string("passive")]);
+}
 
-    let mut child_insertions = insertions.to_vec();
-    if let Some(uuid) = uuid
-        && !has_uuid
+fn pad_name(node: &Sexp) -> Option<&str> {
+    let Sexp::List(items) = node else {
+        return None;
+    };
+    items.get(1).and_then(Sexp::as_atom)
+}
+
+fn ensure_property_hidden(items: &mut Vec<Sexp>) {
+    if !items.iter().any(|item| item.list_name() == Some("hide")) {
+        items.push(Sexp::list(vec![Sexp::atom("hide"), Sexp::atom("yes")]));
+    }
+}
+
+fn set_child_list(node: &mut Sexp, name: &str, args: Vec<Sexp>) {
+    let Sexp::List(items) = node else {
+        return;
+    };
+    if let Some(child) = items
+        .iter_mut()
+        .find(|child| child.list_name() == Some(name))
     {
-        child_insertions.push(format!("(uuid \"{uuid}\")"));
+        let mut new_items = vec![Sexp::atom(name)];
+        new_items.extend(args);
+        *child = Sexp::list(new_items);
+        return;
     }
 
-    if !child_insertions.is_empty() {
-        if lines.len() == 1 {
-            let suffix = child_insertions
-                .iter()
-                .map(|insertion| format!(" {insertion}"))
-                .collect::<String>();
-            lines[0] = insert_before_final_paren(&lines[0], &suffix);
-        } else {
-            let insert_at = lines.len().saturating_sub(1);
-            for insertion in child_insertions.into_iter().rev() {
-                lines.insert(insert_at, format!("    {insertion}"));
-            }
-        }
+    let mut new_items = vec![Sexp::atom(name)];
+    new_items.extend(args);
+    items.push(Sexp::list(new_items));
+}
+
+fn remove_child_lists(node: &mut Sexp, name: &str) {
+    let Sexp::List(items) = node else {
+        return;
+    };
+    items.retain(|child| child.list_name() != Some(name));
+}
+
+fn standard_property(name: &str, value: &str, uuid: &str, font_size: f64) -> Sexp {
+    Sexp::list(vec![
+        Sexp::atom("property"),
+        Sexp::string(name),
+        Sexp::string(value),
+        Sexp::list(vec![
+            Sexp::atom("at"),
+            Sexp::atom("0"),
+            Sexp::atom("0"),
+            Sexp::atom("0"),
+        ]),
+        list1("layer", Sexp::string("F.Fab")),
+        Sexp::list(vec![Sexp::atom("hide"), Sexp::atom("yes")]),
+        list1("uuid", Sexp::string(uuid)),
+        effects(font_size),
+    ])
+}
+
+fn effects(font_size: f64) -> Sexp {
+    Sexp::list(vec![
+        Sexp::atom("effects"),
+        Sexp::list(vec![
+            Sexp::atom("font"),
+            Sexp::list(vec![
+                Sexp::atom("size"),
+                Sexp::atom(n(font_size)),
+                Sexp::atom(n(font_size)),
+            ]),
+            Sexp::list(vec![Sexp::atom("thickness"), Sexp::atom("0.15")]),
+        ]),
+    ])
+}
+
+fn list1(name: &str, value: Sexp) -> Sexp {
+    Sexp::list(vec![Sexp::atom(name), value])
+}
+
+fn uuid_kind(node: &Sexp) -> Option<&'static str> {
+    match node.list_name()? {
+        "property" => Some("property"),
+        "fp_text" => Some("fp_text"),
+        "fp_line" => Some("fp_line"),
+        "fp_rect" => Some("fp_rect"),
+        "fp_circle" => Some("fp_circle"),
+        "fp_arc" => Some("fp_arc"),
+        "fp_poly" => Some("fp_poly"),
+        "pad" => Some("pad"),
+        "zone" => Some("zone"),
+        _ => None,
     }
-
-    let mut out = String::new();
-    for line in lines {
-        out.push_str("    ");
-        out.push_str(&line);
-        out.push('\n');
-    }
-    out
-}
-
-fn parse_pad_name(line: &str) -> Option<String> {
-    let mut rest = line.trim_start().strip_prefix("(pad")?.trim_start();
-    if rest.starts_with('"') {
-        rest = &rest[1..];
-        let end = rest.find('"')?;
-        return Some(rest[..end].to_owned());
-    }
-
-    let end = rest
-        .find(|ch: char| ch.is_ascii_whitespace() || ch == ')' || ch == '(')
-        .unwrap_or(rest.len());
-    (!rest[..end].is_empty()).then(|| rest[..end].to_owned())
-}
-
-fn replace_property_value_line(line: &str, value: &str) -> String {
-    let Some(first_quote) = line.find('"') else {
-        return line.to_owned();
-    };
-    let Some(second_quote) = line[first_quote + 1..].find('"') else {
-        return line.to_owned();
-    };
-    let after_key = first_quote + 1 + second_quote + 1;
-    let Some(value_start_offset) = line[after_key..].find('"') else {
-        return line.to_owned();
-    };
-    let value_start = after_key + value_start_offset;
-    let Some(value_end_offset) = line[value_start + 1..].find('"') else {
-        return line.to_owned();
-    };
-    let value_end = value_start + 1 + value_end_offset;
-
-    format!(
-        "{}\"{}\"{}",
-        &line[..value_start],
-        escape_sexp(value),
-        &line[value_end + 1..]
-    )
-}
-
-fn replace_fp_text_value_line(line: &str, value: &str) -> String {
-    let Some(value_start) = line.find('"') else {
-        return line.to_owned();
-    };
-    let Some(value_end_offset) = line[value_start + 1..].find('"') else {
-        return line.to_owned();
-    };
-    let value_end = value_start + 1 + value_end_offset;
-
-    format!(
-        "{}\"{}\"{}",
-        &line[..value_start],
-        escape_sexp(value),
-        &line[value_end + 1..]
-    )
-}
-
-fn replace_uuid_line(line: &str, uuid: &str) -> String {
-    let Some(start) = line.find("(uuid \"") else {
-        return line.to_owned();
-    };
-    let value_start = start + "(uuid \"".len();
-    let Some(value_end_offset) = line[value_start..].find('"') else {
-        return line.to_owned();
-    };
-    let value_end = value_start + value_end_offset;
-    format!("{}{}{}", &line[..value_start], uuid, &line[value_end..])
-}
-
-fn insert_before_final_paren(line: &str, text: &str) -> String {
-    let Some(close) = line.rfind(')') else {
-        return format!("{line}{text}");
-    };
-    format!("{}{}{}", &line[..close], text, &line[close..])
-}
-
-fn uuid_kind(line: &str) -> Option<&'static str> {
-    let trimmed = line.trim_start();
-    if starts_sexp(trimmed, "property") {
-        Some("property")
-    } else if starts_sexp(trimmed, "fp_text") {
-        Some("fp_text")
-    } else if starts_sexp(trimmed, "fp_line") {
-        Some("fp_line")
-    } else if starts_sexp(trimmed, "fp_rect") {
-        Some("fp_rect")
-    } else if starts_sexp(trimmed, "fp_circle") {
-        Some("fp_circle")
-    } else if starts_sexp(trimmed, "fp_arc") {
-        Some("fp_arc")
-    } else if starts_sexp(trimmed, "fp_poly") {
-        Some("fp_poly")
-    } else if starts_sexp(trimmed, "pad") {
-        Some("pad")
-    } else if starts_sexp(trimmed, "zone") {
-        Some("zone")
-    } else {
-        None
-    }
-}
-
-fn starts_sexp(trimmed: &str, name: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix('(') else {
-        return false;
-    };
-    rest == name
-        || rest
-            .strip_prefix(name)
-            .is_some_and(|suffix| suffix.starts_with(|ch: char| ch.is_ascii_whitespace()))
 }
 
 fn n(value: f64) -> String {
@@ -442,10 +313,6 @@ fn n(value: f64) -> String {
         text.pop();
     }
     if text == "-0" { "0".to_owned() } else { text }
-}
-
-fn escape_sexp(value: &str) -> String {
-    escape_json(value)
 }
 
 fn stable_uuid(seed: &str) -> String {
@@ -518,7 +385,8 @@ mod tests {
                 net_ids: &net_ids,
                 pad_nets: &pad_nets,
                 footprint_library_name: "FixtureLib",
-            }),
+            })
+            .unwrap(),
             render(AssetFootprintRender {
                 footprint_name: "Fixture",
                 kicad_mod,
@@ -530,6 +398,7 @@ mod tests {
                 pad_nets: &pad_nets,
                 footprint_library_name: "FixtureLib",
             })
+            .unwrap()
         );
 
         assert!(rendered.contains("(property \"Reference\" \"C1\""));
@@ -545,6 +414,47 @@ mod tests {
         assert!(!rendered.contains("22222222-2222-4222-8222-222222222222"));
         assert!(!rendered.contains("33333333-3333-4333-8333-333333333333"));
         assert!(!rendered.contains("44444444-4444-4444-8444-444444444444"));
+        assert_unique_uuids(&rendered);
+    }
+
+    #[test]
+    fn asset_renderer_handles_quoted_parentheses_in_source_strings() {
+        let kicad_mod = r#"(footprint "Fixture"
+  (version 20240101)
+  (generator "fixture")
+  (layer "F.Cu")
+  (descr "official text with (parentheses)")
+  (tags "tag with ) and ( chars")
+  (property "Reference" "REF**" (at 0 0 0) (layer "F.SilkS"))
+  (property "Value" "Fixture" (at 0 1 0) (layer "F.Fab"))
+  (property "VendorNote" "keep (this) intact" (at 0 2 0) (layer "F.Fab"))
+  (pad "1" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers "*.Cu" "*.Mask"))
+)"#;
+        let net_ids = BTreeMap::from([("NET(1)".to_owned(), 7usize)]);
+        let pad_nets = BTreeMap::from([(
+            ("C1".to_owned(), "1".to_owned()),
+            ("NET(1)".to_owned(), "P(+)".to_owned()),
+        )]);
+        let c1 = Part::new("C1", "100uF").pins(["P(+)"]).map_pin("P(+)", "1");
+
+        let rendered = render(AssetFootprintRender {
+            footprint_name: "Fixture",
+            kicad_mod,
+            module: &c1,
+            x: 0.0,
+            y: 0.0,
+            rotation: 0.0,
+            net_ids: &net_ids,
+            pad_nets: &pad_nets,
+            footprint_library_name: "FixtureLib",
+        })
+        .unwrap();
+
+        assert!(rendered.contains("(descr \"official text with (parentheses)\""));
+        assert!(rendered.contains("(tags \"tag with ) and ( chars\""));
+        assert!(rendered.contains("(property \"VendorNote\" \"keep (this) intact\""));
+        assert!(rendered.contains("(net 7 \"NET(1)\""));
+        assert!(rendered.contains("(pinfunction \"P(+)\""));
         assert_unique_uuids(&rendered);
     }
 
