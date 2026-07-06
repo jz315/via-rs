@@ -2,9 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::{Diagnostic, Error, ObjectRef, Result};
 use crate::footprint::FootprintPads;
+use crate::ir::{
+    BOARD_IR_SCHEMA, BOARD_IR_VERSION, BoardDataIr, BoardIr, FootprintPadsIr, ModuleIr, NetIr,
+    PinIr, PinRefIr, RulesIr, SymbolIr,
+};
 use crate::rules::BoardRules;
+use crate::symbol::{SymbolSide, SymbolSpec};
 
-use super::{ModuleId, Net, Part};
+use super::{ModuleId, Net, Part, PinRef};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Board {
@@ -52,6 +57,124 @@ impl Board {
 
     pub fn rules_mut(&mut self) -> &mut BoardRules {
         &mut self.rules
+    }
+
+    pub fn to_ir(&self) -> BoardIr {
+        BoardIr::new(BoardDataIr {
+            name: self.name.clone(),
+            rules: RulesIr {
+                grid_mm: self.rules.grid_mm(),
+                default_track_width_mm: self.rules.default_track_width_mm(),
+                net_class_track_width_mm: self
+                    .rules
+                    .net_class_track_widths_mm()
+                    .map(|(class, width)| (class.clone(), *width))
+                    .collect(),
+                clearance_mm: self.rules.clearance_mm(),
+                via_drill_mm: self.rules.via_drill_mm(),
+                via_diameter_mm: self.rules.via_diameter_mm(),
+            },
+            modules: self
+                .modules
+                .values()
+                .map(|module| ModuleIr {
+                    refdes: module.refdes().to_owned(),
+                    value: module.value().to_owned(),
+                    footprint: module.footprint_name().map(str::to_owned),
+                    symbol: module.symbol_spec().map(symbol_to_ir),
+                    pins: module
+                        .pins_iter()
+                        .map(|pin| PinIr {
+                            name: pin.clone(),
+                            pads: module.pads_for_pin(pin).into_iter().collect(),
+                            class: module.class_for_pin(pin).cloned(),
+                        })
+                        .collect(),
+                    requires_verification: module.requires_verification(),
+                    manufacturer_part_number: module.manufacturer_part_number().map(str::to_owned),
+                    supplier_parts: module
+                        .supplier_parts()
+                        .map(|(supplier, part)| (supplier.clone(), part.clone()))
+                        .collect(),
+                    production_notes: module.production_notes().to_vec(),
+                })
+                .collect(),
+            nets: self
+                .nets
+                .values()
+                .map(|net| NetIr {
+                    name: net.name().to_owned(),
+                    class: net.electrical_class().cloned(),
+                    connections: net
+                        .connections()
+                        .iter()
+                        .map(|pin| PinRefIr {
+                            module: pin.module.clone(),
+                            pin: pin.pin.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            footprints: self
+                .footprints
+                .values()
+                .map(|footprint| FootprintPadsIr {
+                    name: footprint.name().to_owned(),
+                    pads: footprint.pads().iter().cloned().collect(),
+                    asset: footprint.asset().cloned(),
+                    source: footprint.source().map(std::path::Path::to_path_buf),
+                    ir: footprint.ir().cloned(),
+                })
+                .collect(),
+        })
+    }
+
+    pub fn from_ir(ir: BoardIr) -> Result<Self> {
+        if ir.schema != BOARD_IR_SCHEMA {
+            return Err(invalid_ir(format!(
+                "unsupported schema {}; expected {}",
+                ir.schema, BOARD_IR_SCHEMA
+            )));
+        }
+
+        if !matches!(ir.version, 1 | BOARD_IR_VERSION) {
+            return Err(invalid_ir(format!(
+                "unsupported version {}; expected 1 or {}",
+                ir.version, BOARD_IR_VERSION
+            )));
+        }
+
+        let mut board = Self::new(ir.board.name);
+        board.rules = rules_from_ir(ir.board.rules);
+
+        for module in ir.board.modules {
+            if board.modules.contains_key(&module.refdes) {
+                return Err(Error::DuplicateModule(module.refdes));
+            }
+            let part = part_from_ir(module);
+            board.modules.insert(part.refdes.clone(), part);
+        }
+
+        for net in ir.board.nets {
+            if board.nets.contains_key(&net.name) {
+                return Err(invalid_ir(format!("duplicate net {}", net.name)));
+            }
+            board.nets.insert(net.name.clone(), net_from_ir(net));
+        }
+
+        for footprint in ir.board.footprints {
+            if board.footprints.contains_key(&footprint.name) {
+                return Err(invalid_ir(format!(
+                    "duplicate footprint {}",
+                    footprint.name
+                )));
+            }
+            board
+                .footprints
+                .insert(footprint.name.clone(), footprint_from_ir(footprint));
+        }
+
+        Ok(board)
     }
 
     pub(crate) fn add_module(&mut self, part: Part) -> Result<ModuleId> {
@@ -125,6 +248,23 @@ impl Board {
             };
 
             if let Some(footprint) = self.footprints.get(footprint_name) {
+                if let Some(crate::footprint::FootprintAsset::KicadLibrary { name, .. }) =
+                    footprint.asset()
+                    && name != footprint.name()
+                {
+                    diagnostics.push(
+                        Diagnostic::coded(
+                            "footprint.asset_alias",
+                            format!(
+                                "footprint {} points to KiCad library footprint {}; aliasing is not supported",
+                                footprint.name(),
+                                name
+                            ),
+                        )
+                        .at(ObjectRef::footprint(footprint.name())),
+                    );
+                }
+
                 for pin in module.pins_iter() {
                     for pad in module.pads_for_pin(pin) {
                         if !footprint.contains_pad(&pad) {
@@ -167,6 +307,19 @@ impl Board {
                         .relates_to(ObjectRef::module(module.refdes())),
                     );
                 }
+            } else if !self.footprints.is_empty() {
+                diagnostics.push(
+                    Diagnostic::coded(
+                        "part.unknown_footprint",
+                        format!(
+                            "{} references footprint {} but no footprint pads or asset were loaded",
+                            module.refdes(),
+                            footprint_name
+                        ),
+                    )
+                    .at(ObjectRef::module(module.refdes()))
+                    .relates_to(ObjectRef::footprint(footprint_name)),
+                );
             }
         }
     }
@@ -202,6 +355,41 @@ impl Board {
                         )
                         .at(ObjectRef::pin(module.refdes(), classified_pin)),
                     );
+                }
+            }
+
+            if let Some(symbol) = module.symbol_spec() {
+                let mut seen_symbol_pins = BTreeSet::new();
+                for (pin, _side) in symbol.pin_sides() {
+                    if !module.contains_pin(pin) {
+                        diagnostics.push(
+                            Diagnostic::coded(
+                                "symbol.unknown_pin",
+                                format!(
+                                    "{} symbol references unknown logical pin {}",
+                                    module.refdes(),
+                                    pin
+                                ),
+                            )
+                            .at(ObjectRef::pin(module.refdes(), pin))
+                            .relates_to(ObjectRef::module(module.refdes())),
+                        );
+                    }
+
+                    if !seen_symbol_pins.insert(pin.clone()) {
+                        diagnostics.push(
+                            Diagnostic::coded(
+                                "symbol.duplicate_pin",
+                                format!(
+                                    "{} symbol places logical pin {} more than once",
+                                    module.refdes(),
+                                    pin
+                                ),
+                            )
+                            .at(ObjectRef::pin(module.refdes(), pin))
+                            .relates_to(ObjectRef::module(module.refdes())),
+                        );
+                    }
                 }
             }
         }
@@ -349,4 +537,98 @@ impl Board {
             }
         }
     }
+}
+
+fn symbol_to_ir(symbol: &SymbolSpec) -> SymbolIr {
+    SymbolIr {
+        kind: symbol.kind(),
+        label: symbol.label_text().map(str::to_owned),
+        pins: [
+            SymbolSide::Left,
+            SymbolSide::Right,
+            SymbolSide::Top,
+            SymbolSide::Bottom,
+        ]
+        .into_iter()
+        .filter_map(|side| {
+            let pins = symbol.pins_on(side);
+            (!pins.is_empty()).then(|| (side, pins.to_vec()))
+        })
+        .collect(),
+    }
+}
+
+fn rules_from_ir(ir: RulesIr) -> BoardRules {
+    let mut rules = BoardRules::new();
+    rules
+        .set_grid_mm(ir.grid_mm)
+        .set_default_track_width_mm(ir.default_track_width_mm)
+        .set_net_class_track_widths_mm(ir.net_class_track_width_mm)
+        .set_clearance_mm(ir.clearance_mm)
+        .set_via(ir.via_diameter_mm, ir.via_drill_mm);
+    rules
+}
+
+fn part_from_ir(ir: ModuleIr) -> Part {
+    let mut part = Part::new(ir.refdes, ir.value);
+    part.footprint = ir.footprint;
+    part.symbol = ir.symbol.map(symbol_from_ir);
+    part.verify = ir.requires_verification;
+    part.manufacturer_part_number = ir.manufacturer_part_number;
+    part.supplier_parts = ir.supplier_parts;
+    part.production_notes = ir.production_notes;
+
+    for pin in ir.pins {
+        part.pins.insert(pin.name.clone());
+        if !pin.pads.is_empty() {
+            part.pin_pads
+                .insert(pin.name.clone(), pin.pads.into_iter().collect());
+        }
+        if let Some(class) = pin.class {
+            part.pin_classes.insert(pin.name, class);
+        }
+    }
+
+    part
+}
+
+fn symbol_from_ir(ir: SymbolIr) -> SymbolSpec {
+    let mut symbol = SymbolSpec::new(ir.kind);
+    if let Some(label) = ir.label {
+        symbol = symbol.label(label);
+    }
+    for (side, pins) in ir.pins {
+        symbol = symbol.side_pins(side, pins);
+    }
+    symbol
+}
+
+fn net_from_ir(ir: NetIr) -> Net {
+    let mut net = Net::new(ir.name);
+    if let Some(class) = ir.class {
+        net.class(class);
+    }
+    net.connect_all(ir.connections.into_iter().map(|pin| PinRef {
+        module: pin.module,
+        pin: pin.pin,
+    }));
+    net
+}
+
+fn footprint_from_ir(ir: FootprintPadsIr) -> FootprintPads {
+    let mut footprint = FootprintPads::new(ir.name, ir.pads);
+    if let Some(asset) = ir.asset {
+        footprint = footprint.with_asset(asset);
+    }
+    if let Some(source) = ir.source {
+        footprint = footprint.with_source(source);
+    }
+    if let Some(geometry) = ir.ir {
+        footprint = footprint.with_ir(geometry);
+    }
+    footprint
+}
+
+fn invalid_ir(message: impl Into<String>) -> Error {
+    Error::Io(format!("invalid BoardIr: {}", message.into()))
 }

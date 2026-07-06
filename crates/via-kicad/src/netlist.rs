@@ -67,12 +67,12 @@ fn escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use via_core::{BoardSpec, Part};
+    use via_core::{Design, model::Part};
 
     #[test]
     fn exports_physical_pad_numbers() {
-        let mut spec = BoardSpec::new("physical_netlist");
-        let module = spec
+        let mut design = Design::new("physical_netlist");
+        let module = design
             .add(
                 Part::new("U1", "module")
                     .footprint("Module")
@@ -81,9 +81,10 @@ mod tests {
                     .map_pin_to_pads("GND", ["22", "23"]),
             )
             .unwrap();
-        spec.net("SIGNAL")
-            .connect_all([module.pin("GPIO4"), module.pin("GND")]);
-        let board = spec.build().unwrap();
+        design
+            .net("SIGNAL")
+            .connect_all(&mut design, [module.pin("GPIO4"), module.pin("GND")]);
+        let board = design.build().unwrap();
 
         let path = std::env::temp_dir().join("via_physical_netlist_test.net");
         write_netlist(&board, &path).unwrap();

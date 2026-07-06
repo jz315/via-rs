@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::electrical::ElectricalClass;
+use crate::symbol::SymbolSpec;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinSpec {
@@ -76,6 +77,7 @@ pub struct Part {
     pub(crate) refdes: String,
     pub(crate) value: String,
     pub(crate) footprint: Option<String>,
+    pub(crate) symbol: Option<SymbolSpec>,
     pub(crate) pins: BTreeSet<String>,
     pub(crate) pin_pads: BTreeMap<String, BTreeSet<String>>,
     pub(crate) pin_classes: BTreeMap<String, ElectricalClass>,
@@ -91,6 +93,7 @@ impl Part {
             refdes: refdes.into(),
             value: value.into(),
             footprint: None,
+            symbol: None,
             pins: BTreeSet::new(),
             pin_pads: BTreeMap::new(),
             pin_classes: BTreeMap::new(),
@@ -103,6 +106,11 @@ impl Part {
 
     pub fn footprint(mut self, footprint: impl Into<String>) -> Self {
         self.footprint = Some(footprint.into());
+        self
+    }
+
+    pub fn symbol(mut self, symbol: impl Into<SymbolSpec>) -> Self {
+        self.symbol = Some(symbol.into());
         self
     }
 
@@ -233,6 +241,10 @@ impl Part {
 
     pub fn footprint_name(&self) -> Option<&str> {
         self.footprint.as_deref()
+    }
+
+    pub fn symbol_spec(&self) -> Option<&SymbolSpec> {
+        self.symbol.as_ref()
     }
 
     pub fn pins_iter(&self) -> impl Iterator<Item = &String> {

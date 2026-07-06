@@ -5,11 +5,10 @@ members = [
     "crates/via-footprint-ir",
     "crates/via-footprint",
     "crates/via-kicad",
+    "crates/via-kicad-footprints",
     "crates/via-lceda-pro",
     "crates/via-parts",
-    "crates/via-parts-harmonic",
-    "crates/via-patterns-harmonic",
-    "crates/via-patterns-motion",
+    "crates/via-project",
     "crates/via-examples",
     "crates/via-cli",
 ]
@@ -19,3 +18,6 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+readme = "README.md"
+categories = ["development-tools"]
+keywords = ["eda", "pcb", "kicad", "electronics"]

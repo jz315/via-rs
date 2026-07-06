@@ -1,4 +1,4 @@
-use via_core::Board;
+use via_core::{Board, SymbolSide};
 
 use crate::epru::{EpruWriter, SymbolAttr};
 use crate::ids::{
@@ -6,7 +6,7 @@ use crate::ids::{
     schematic_uuid, sheet_device_uuid, sheet_part_id, sheet_symbol_uuid, stable_uuid, symbol_uuid,
 };
 use crate::model::{
-    module_placements, symbol_height, symbol_part_id, symbol_pin_entries, symbol_pin_y,
+    module_placements, symbol_height_from_entries, symbol_part_id, symbol_pin_entries,
 };
 
 pub(crate) fn render_board_document(writer: &mut EpruWriter, board: &Board) {
@@ -75,7 +75,7 @@ pub(crate) fn render_schematic_page_document(writer: &mut EpruWriter, board: &Bo
             key: "Designator",
             value: module.refdes(),
             x: Some(placement.x - 40),
-            y: Some(placement.y - symbol_height(symbol_pin_entries(module).len()) / 2 - 30),
+            y: Some(placement.y - symbol_height_from_entries(&symbol_pin_entries(module)) / 2 - 30),
             visible: true,
             z_index: placement.z_index + 1,
         });
@@ -86,7 +86,7 @@ pub(crate) fn render_schematic_page_document(writer: &mut EpruWriter, board: &Bo
             key: "Name",
             value: module.value(),
             x: Some(placement.x - 40),
-            y: Some(placement.y + symbol_height(symbol_pin_entries(module).len()) / 2 + 15),
+            y: Some(placement.y + symbol_height_from_entries(&symbol_pin_entries(module)) / 2 + 15),
             visible: true,
             z_index: placement.z_index + 2,
         });
@@ -153,23 +153,20 @@ pub(crate) fn render_schematic_page_document(writer: &mut EpruWriter, board: &Bo
                 continue;
             };
             let symbol_pins = symbol_pin_entries(module);
-            let pins_len = symbol_pins.len();
-            for (pin_index, _) in symbol_pins
+            for symbol_pin in symbol_pins
                 .iter()
-                .enumerate()
-                .filter(|(_, symbol_pin)| symbol_pin.logical_name == pin_ref.pin)
+                .filter(|symbol_pin| symbol_pin.logical_name == pin_ref.pin)
             {
-                let side_left = pin_index % 2 == 0;
-                let pin_y = placement.y + symbol_pin_y(pin_index, pins_len);
-                let pin_x = placement.x + if side_left { -90 } else { 90 };
-                let stub_x = if side_left { pin_x - 45 } else { pin_x + 45 };
-                let label_x = if side_left { stub_x - 120 } else { stub_x + 8 };
+                let pin_x = placement.x + symbol_pin.x;
+                let pin_y = placement.y + symbol_pin.y;
+                let (stub_x, stub_y, label_x, label_y, label_rotation, align) =
+                    net_stub_geometry(pin_x, pin_y, symbol_pin.side);
 
                 writer.wire(
                     &format!("w{net_index}_{wire_index}"),
                     5000 + wire_index,
                     net.name(),
-                    &[(pin_x, pin_y), (stub_x, pin_y)],
+                    &[(pin_x, pin_y), (stub_x, stub_y)],
                 );
                 writer.record_with_id(
                     "TEXT",
@@ -177,16 +174,18 @@ pub(crate) fn render_schematic_page_document(writer: &mut EpruWriter, board: &Bo
                     &format!(
                         concat!(
                             "{{\"partId\":\"\",\"groupId\":\"\",\"locked\":false,\"zIndex\":{},",
-                            "\"x\":{},\"y\":{},\"rotation\":0,\"value\":\"{}\",",
+                            "\"x\":{},\"y\":{},\"rotation\":{},\"value\":\"{}\",",
                             "\"color\":\"#666666\",\"fillColor\":null,\"fontFamily\":null,",
                             "\"fontSize\":12,\"fontWeight\":null,\"italic\":null,",
-                            "\"underline\":null,\"strikeout\":null,\"align\":\"LEFT_BOTTOM\",",
+                            "\"underline\":null,\"strikeout\":null,\"align\":\"{}\",",
                             "\"version\":\"2.0\"}}"
                         ),
                         7000 + wire_index,
                         label_x,
-                        pin_y - 6,
+                        label_y,
+                        label_rotation,
                         json_escape(net.name()),
+                        align,
                     ),
                 );
                 wire_index += 1;
@@ -202,6 +201,19 @@ pub(crate) fn render_schematic_page_document(writer: &mut EpruWriter, board: &Bo
             schematic_uuid(board.name()),
         ),
     );
+}
+
+fn net_stub_geometry(
+    pin_x: i32,
+    pin_y: i32,
+    side: SymbolSide,
+) -> (i32, i32, i32, i32, i32, &'static str) {
+    match side {
+        SymbolSide::Left => (pin_x - 45, pin_y, pin_x - 165, pin_y - 6, 0, "LEFT_BOTTOM"),
+        SymbolSide::Right => (pin_x + 45, pin_y, pin_x + 53, pin_y - 6, 0, "LEFT_BOTTOM"),
+        SymbolSide::Top => (pin_x, pin_y - 45, pin_x + 8, pin_y - 53, 90, "LEFT_BOTTOM"),
+        SymbolSide::Bottom => (pin_x, pin_y + 45, pin_x + 8, pin_y + 53, 90, "LEFT_BOTTOM"),
+    }
 }
 
 fn render_sheet_component(writer: &mut EpruWriter, board: &Board) {

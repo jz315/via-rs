@@ -4,11 +4,10 @@ version.workspace = true
 edition.workspace = true
 description = "Example and project boards built on the via library crates."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-via = { path = "../via" }
-via-core = { path = "../via-core" }
-via-kicad = { path = "../via-kicad" }
-via-parts-harmonic = { path = "../via-parts-harmonic" }
-via-patterns-harmonic = { path = "../via-patterns-harmonic" }
-via-patterns-motion = { path = "../via-patterns-motion" }
+via = { version = "=0.1.0", path = "../via" }
+via-core = { version = "=0.1.0", path = "../via-core" }

@@ -30,6 +30,38 @@ pub fn tht_header_1x(name: impl Into<String>, pins: usize) -> ThtHeader1x {
     }
 }
 
+pub fn pin_header_1x02_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x02_P2.54", 2).build()
+}
+
+pub fn pin_header_1x03_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x03_P2.54", 3).build()
+}
+
+pub fn pin_header_1x04_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x04_P2.54", 4).build()
+}
+
+pub fn pin_header_1x05_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x05_P2.54", 5).build()
+}
+
+pub fn pin_header_1x06_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x06_P2.54", 6).build()
+}
+
+pub fn pin_header_1x08_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x08_P2.54", 8).build()
+}
+
+pub fn pin_header_1x10_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x10_P2.54", 10).build()
+}
+
+pub fn pin_header_1x20_p2p54() -> GeneratedFootprint {
+    tht_header_1x("Pin_1x20_P2.54", 20).build()
+}
+
 impl ThtHeader1x {
     pub fn pitch(mut self, pitch: f64) -> Self {
         self.pitch = pitch;
@@ -157,6 +189,29 @@ pub fn tht_header_2x(name: impl Into<String>, pins_per_row: usize) -> ThtHeader2
         left_labels: Vec::new(),
         right_labels: Vec::new(),
     }
+}
+
+pub fn pin_socket_2x08_p2p54_row12p70() -> GeneratedFootprint {
+    tht_header_2x("Socket_2x08_R12.7", 8)
+        .row_spacing(12.70)
+        .value("Socket_2x08_R12.7")
+        .build()
+}
+
+pub fn pin_header_2x03_p2p54() -> GeneratedFootprint {
+    tht_header_2x("Pin_2x03_P2.54", 3).build()
+}
+
+pub fn pin_header_2x05_p2p54() -> GeneratedFootprint {
+    tht_header_2x("Pin_2x05_P2.54", 5).build()
+}
+
+pub fn pin_header_2x10_p2p54() -> GeneratedFootprint {
+    tht_header_2x("Pin_2x10_P2.54", 10).build()
+}
+
+pub fn pin_header_2x20_p2p54() -> GeneratedFootprint {
+    tht_header_2x("Pin_2x20_P2.54", 20).build()
 }
 
 impl ThtHeader2x {

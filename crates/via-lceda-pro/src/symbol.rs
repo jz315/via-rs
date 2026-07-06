@@ -1,12 +1,14 @@
-use via_core::{Board, Part};
+use via_core::{Board, SymbolSide, model::Part};
 
 use crate::epru::{EpruWriter, SymbolAttr};
 use crate::ids::{footprint_name, json_escape, sheet_part_id, sheet_symbol_uuid};
-use crate::model::{symbol_height, symbol_name, symbol_part_id, symbol_pin_entries, symbol_pin_y};
+use crate::model::{
+    SymbolPinEntry, symbol_height_from_entries, symbol_name, symbol_part_id, symbol_pin_entries,
+};
 
 pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
     let pins = symbol_pin_entries(module);
-    let height = symbol_height(pins.len());
+    let height = symbol_height_from_entries(&pins);
     let part_id = symbol_part_id(module);
 
     writer.dochead("SYMBOL", &crate::ids::symbol_uuid(module));
@@ -76,11 +78,9 @@ pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
     );
 
     for (index, pin) in pins.iter().enumerate() {
-        let y = symbol_pin_y(index, pins.len());
-        let side_left = index % 2 == 0;
         let pin_id = format!("p{}", index + 1);
-        let pin_x = if side_left { -90 } else { 90 };
-        let pin_rotation = if side_left { 0 } else { 180 };
+        let pin_name_x = pin_name_x(pin);
+        let pin_number_x = pin_number_x(pin);
         writer.record_with_id(
             "PIN",
             &pin_id,
@@ -92,9 +92,9 @@ pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
                 ),
                 json_escape(&part_id),
                 10 + index * 4,
-                pin_x,
-                y,
-                pin_rotation,
+                pin.x,
+                pin.y,
+                pin.rotation,
             ),
         );
         writer.attr(SymbolAttr {
@@ -103,8 +103,8 @@ pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
             parent_id: &pin_id,
             key: "Pin Name",
             value: &pin.logical_name,
-            x: Some(if side_left { -64 } else { 64 }),
-            y: Some(y - 5),
+            x: Some(pin_name_x),
+            y: Some(pin.y - 5),
             visible: true,
             z_index: 11 + index * 4,
         });
@@ -114,8 +114,8 @@ pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
             parent_id: &pin_id,
             key: "Pin Number",
             value: &pin.pad_number,
-            x: Some(if side_left { -84 } else { 84 }),
-            y: Some(y - 5),
+            x: Some(pin_number_x),
+            y: Some(pin.y - 5),
             visible: false,
             z_index: 12 + index * 4,
         });
@@ -125,8 +125,8 @@ pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
             parent_id: &pin_id,
             key: "Pin Type",
             value: "IN",
-            x: Some(pin_x),
-            y: Some(y),
+            x: Some(pin.x),
+            y: Some(pin.y),
             visible: false,
             z_index: 13 + index * 4,
         });
@@ -144,6 +144,22 @@ pub(crate) fn render_symbol_document(writer: &mut EpruWriter, module: &Part) {
             json_escape(module.value()),
         ),
     );
+}
+
+fn pin_name_x(pin: &SymbolPinEntry) -> i32 {
+    match pin.side {
+        SymbolSide::Left => -64,
+        SymbolSide::Right => 64,
+        SymbolSide::Top | SymbolSide::Bottom => pin.x - 20,
+    }
+}
+
+fn pin_number_x(pin: &SymbolPinEntry) -> i32 {
+    match pin.side {
+        SymbolSide::Left => -84,
+        SymbolSide::Right => 84,
+        SymbolSide::Top | SymbolSide::Bottom => pin.x - 8,
+    }
 }
 
 pub(crate) fn render_sheet_symbol_document(writer: &mut EpruWriter, board: &Board) {

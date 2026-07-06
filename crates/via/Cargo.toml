@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 description = "User-facing facade crate for the VIA Rust EDA library."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-via-core = { path = "../via-core" }
-via-footprint-ir = { path = "../via-footprint-ir" }
-via-parts = { path = "../via-parts" }
-via-parts-harmonic = { path = "../via-parts-harmonic" }
-via-patterns-harmonic = { path = "../via-patterns-harmonic" }
-via-patterns-motion = { path = "../via-patterns-motion" }
+via-core = { version = "=0.1.0", path = "../via-core" }
+via-footprint = { version = "=0.1.0", path = "../via-footprint" }
+via-footprint-ir = { version = "=0.1.0", path = "../via-footprint-ir" }
+via-parts = { version = "=0.1.0", path = "../via-parts" }
+via-project = { version = "=0.1.0", path = "../via-project" }

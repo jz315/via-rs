@@ -1,35 +1,37 @@
 use via::prelude::*;
 
 pub fn modern_api_minimal_board() -> Result<Board> {
-    let mut design = Design::new("modern_api_minimal")
+    let mut d = Design::new("modern_api_minimal")
         .rules(Rules::new())
         .units(Unit::Mm);
 
-    let signal = design.logic("SIGNAL", "3V3");
-    let v3v3 = design.power("3V3", Voltage::dc(3.3));
-    let ground = design.ground("GND");
+    let signal = d.signal("SIGNAL", "3V3");
+    let v3v3 = d.rail("3V3").dc(3.3);
+    let ground = d.ground("GND");
 
-    let input = design.add(
+    let input = d.add(
         part("J1", "External 3.3V signal input")
-            .footprint("Header_1x03")
-            .pin(pin("SIG").logic("3V3"))
-            .pin(pin("3V3").power("3V3"))
-            .pin(pin("GND").ground()),
+            .footprint(fp::pin_1x03())
+            .symbol(sym::connector().left(["SIG", "3V3", "GND"]))
+            .pin(pin("SIG").logic("3V3").pad("1"))
+            .pin(pin("3V3").power("3V3").pad("2"))
+            .pin(pin("GND").ground().pad("3")),
     )?;
-    let load = design.add(
+    let load = d.add(
         part("U1", "Demo load")
-            .footprint("Demo_Load_3Pin")
-            .pin(pin("IN").logic("3V3"))
-            .pin(pin("VCC").power("3V3"))
-            .pin(pin("GND").ground()),
+            .footprint(fp::pin_1x03())
+            .symbol(sym::module().left(["IN"]).right(["VCC", "GND"]))
+            .pin(pin("IN").logic("3V3").pad("1"))
+            .pin(pin("VCC").power("3V3").pad("2"))
+            .pin(pin("GND").ground().pad("3")),
     )?;
 
-    signal.connect_all(&mut design, [input.pin("SIG"), load.pin("IN")]);
-    v3v3.connect_all(&mut design, [input.pin("3V3"), load.pin("VCC")]);
-    ground.connect_all(&mut design, [input.pin("GND"), load.pin("GND")]);
+    d.connect(&signal, [input.pin("SIG"), load.pin("IN")]);
+    d.connect(&v3v3, [input.pin("3V3"), load.pin("VCC")]);
+    d.connect(&ground, [input.pin("GND"), load.pin("GND")]);
 
-    design.check(CheckProfile::Prototype)?;
-    design.build()
+    d.check(CheckProfile::Prototype)?;
+    d.finish()
 }
 
 #[cfg(test)]

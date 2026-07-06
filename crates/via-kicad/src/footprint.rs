@@ -2,20 +2,20 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use via_core::{BoardSpec, FootprintPads, Result};
+use via_core::{Design, FootprintPads, Result};
 
-pub fn load_kicad_footprint(spec: &mut BoardSpec, path: impl AsRef<Path>) -> Result<()> {
-    spec.add_footprint_pads(footprint_pads_from_kicad_mod(path)?);
+pub fn load_kicad_footprint(design: &mut Design, path: impl AsRef<Path>) -> Result<()> {
+    design.add_footprint_pads(footprint_pads_from_kicad_mod(path)?);
     Ok(())
 }
 
-pub fn load_kicad_footprint_dir(spec: &mut BoardSpec, path: impl AsRef<Path>) -> Result<usize> {
+pub fn load_kicad_footprint_dir(design: &mut Design, path: impl AsRef<Path>) -> Result<usize> {
     let mut count = 0;
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) == Some("kicad_mod") {
-            load_kicad_footprint(spec, path)?;
+            load_kicad_footprint(design, path)?;
             count += 1;
         }
     }
@@ -30,7 +30,11 @@ pub fn footprint_pads_from_kicad_mod(path: impl AsRef<Path>) -> Result<Footprint
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_else(|| "unknown".to_owned());
 
-    Ok(FootprintPads::new(name, parse_kicad_mod_pad_names(&text)).with_source(path.to_path_buf()))
+    Ok(footprint_pads_from_kicad_mod_text(name, &text).with_source(path.to_path_buf()))
+}
+
+pub fn footprint_pads_from_kicad_mod_text(name: impl Into<String>, text: &str) -> FootprintPads {
+    FootprintPads::new(name, parse_kicad_mod_pad_names(text))
 }
 
 pub fn parse_kicad_mod_pad_names(text: &str) -> BTreeSet<String> {

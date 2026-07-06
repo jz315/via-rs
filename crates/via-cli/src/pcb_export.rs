@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Deserialize;
-use via_core::{Board, Part};
+use via_core::{Board, model::Part};
 
 use crate::json::escape_json;
+use crate::kicad_mod_asset::{self, AssetFootprintRender};
 
 #[derive(Debug, Deserialize)]
 pub struct Layout {
@@ -97,15 +98,26 @@ pub fn read_layout(path: &Path) -> via_core::Result<Layout> {
     Ok(layout)
 }
 
-pub fn write_kicad_pcb(board: &Board, layout: &Layout, out: &Path) -> via_core::Result<()> {
+pub fn write_kicad_pcb(
+    board: &Board,
+    layout: &Layout,
+    out: &Path,
+    footprint_library_name: &str,
+    official_footprints: &BTreeMap<String, String>,
+) -> via_core::Result<()> {
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).map_err(|err| via_core::Error::Io(err.to_string()))?;
     }
-    let text = render_kicad_pcb(board, layout);
+    let text = render_kicad_pcb(board, layout, footprint_library_name, official_footprints);
     std::fs::write(out, text).map_err(|err| via_core::Error::Io(err.to_string()))
 }
 
-fn render_kicad_pcb(board: &Board, layout: &Layout) -> String {
+fn render_kicad_pcb(
+    board: &Board,
+    layout: &Layout,
+    footprint_library_name: &str,
+    official_footprints: &BTreeMap<String, String>,
+) -> String {
     let net_ids = net_ids(board);
     let pad_nets = pad_net_map(board);
     let mut out = String::new();
@@ -134,7 +146,7 @@ fn render_kicad_pcb(board: &Board, layout: &Layout) -> String {
     }
     out.push('\n');
 
-    let footprint_irs = generated_footprint_irs();
+    let footprint_irs = generated_footprint_irs(board);
     for placement in &layout.modules {
         if placement.status.as_deref() == Some("missing") {
             continue;
@@ -148,6 +160,8 @@ fn render_kicad_pcb(board: &Board, layout: &Layout) -> String {
             &net_ids,
             &pad_nets,
             footprint_irs.get(module.footprint_name().unwrap_or("")),
+            footprint_library_name,
+            official_footprints,
         ));
     }
 
@@ -276,11 +290,30 @@ fn render_footprint(
     net_ids: &BTreeMap<String, usize>,
     pad_nets: &BTreeMap<(String, String), (String, String)>,
     generated: Option<&GeneratedFootprintIr>,
+    footprint_library_name: &str,
+    official_footprints: &BTreeMap<String, String>,
 ) -> String {
     let footprint_name = module.footprint_name().unwrap_or("VIA_PLACEHOLDER");
+    if generated.is_none() {
+        if let Some(kicad_mod) = official_footprints.get(footprint_name) {
+            return kicad_mod_asset::render(AssetFootprintRender {
+                footprint_name,
+                kicad_mod,
+                module,
+                x: placement.x,
+                y: placement.y,
+                rotation: placement.rotation,
+                net_ids,
+                pad_nets,
+                footprint_library_name,
+            });
+        }
+    }
+
     let mut out = String::new();
     out.push_str(&format!(
-        "  (footprint \"via_generated:{}\"\n",
+        "  (footprint \"{}:{}\"\n",
+        escape_sexp(footprint_library_name),
         escape_sexp(footprint_name)
     ));
     out.push_str("    (layer \"F.Cu\")\n");
@@ -295,14 +328,20 @@ fn render_footprint(
         n(placement.rotation)
     ));
     out.push_str(&format!(
-        "    (property \"Reference\" \"{}\" (at 0 -3 0) (layer \"F.SilkS\") (uuid \"{}\") (effects (font (size 1 1) (thickness 0.15))))\n",
+        "    (property \"Reference\" \"{}\" (at 0 -3 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.15))))\n",
         escape_sexp(module.refdes()),
-        stable_uuid(&format!("prop-ref:{}", module.refdes())),
     ));
     out.push_str(&format!(
-        "    (property \"Value\" \"{}\" (at 0 3 0) (layer \"F.Fab\") (uuid \"{}\") (effects (font (size 1 1) (thickness 0.15))))\n",
+        "    (property \"Value\" \"{}\" (at 0 3 0) (layer \"F.Fab\") (hide yes) (effects (font (size 1 1) (thickness 0.15))))\n",
         escape_sexp(module.value()),
-        stable_uuid(&format!("prop-val:{}", module.refdes())),
+    ));
+    out.push_str(&format!(
+        "    (property \"Datasheet\" \"\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"{}\") (effects (font (size 1.27 1.27))))\n",
+        stable_uuid(&format!("prop-datasheet:{}", module.refdes())),
+    ));
+    out.push_str(&format!(
+        "    (property \"Description\" \"\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"{}\") (effects (font (size 1.27 1.27))))\n",
+        stable_uuid(&format!("prop-description:{}", module.refdes())),
     ));
     if module.requires_verification() || generated.is_none() {
         out.push_str("    (property \"VIA_VERIFY\" \"true\" (at 0 0 0) (layer \"F.Fab\") (hide yes) (uuid \"");
@@ -315,13 +354,13 @@ fn render_footprint(
         stable_uuid(&format!("text-ref:{}", module.refdes())),
     ));
     out.push_str(&format!(
-        "    (fp_text value \"{}\" (at 0 3 0) (layer \"F.Fab\") (uuid \"{}\") (effects (font (size 1 1) (thickness 0.15))))\n",
+        "    (fp_text value \"{}\" (at 0 3 0) (layer \"F.Fab\") hide (uuid \"{}\") (effects (font (size 1 1) (thickness 0.15))))\n",
         escape_sexp(module.value()),
         stable_uuid(&format!("text-val:{}", module.refdes())),
     ));
 
     if let Some(ir) = generated {
-        for line in &ir.lines {
+        for (line_idx, line) in ir.lines.iter().enumerate() {
             out.push_str(&format!(
                 "    (fp_line (start {} {}) (end {} {}) (stroke (width {}) (type solid)) (layer \"{}\") (uuid \"{}\"))\n",
                 n(line.x1),
@@ -330,7 +369,17 @@ fn render_footprint(
                 n(line.y2),
                 n(line.width),
                 escape_sexp(&line.layer),
-                stable_uuid(&format!("line:{}:{}:{}:{}", module.refdes(), line.x1, line.y1, line.x2)),
+                stable_uuid(&format!(
+                    "line:{}:{}:{}:{}:{}:{}:{}:{}",
+                    module.refdes(),
+                    line_idx,
+                    line.layer,
+                    line.x1,
+                    line.y1,
+                    line.x2,
+                    line.y2,
+                    line.width
+                )),
             ));
         }
         for pad in &ir.pads {
@@ -488,11 +537,13 @@ struct GeneratedLine {
     width: f64,
 }
 
-fn generated_footprint_irs() -> BTreeMap<String, GeneratedFootprintIr> {
+fn generated_footprint_irs(board: &Board) -> BTreeMap<String, GeneratedFootprintIr> {
     let mut map = BTreeMap::new();
-    for footprint in via_parts_harmonic::generated_footprints() {
+    for footprint in board.footprints() {
+        let Some(ir) = footprint.ir() else {
+            continue;
+        };
         let name = footprint.name().to_owned();
-        let ir = footprint.into_ir();
         map.insert(
             name,
             GeneratedFootprintIr {
@@ -613,23 +664,24 @@ fn stable_uuid(seed: &str) -> String {
         (hash >> 16) as u16,
         hash & 0x0fff,
         (hash >> 12) & 0x0fff,
-        hash & 0x000f_ffff_ffff_ffff
+        hash & 0x0000_ffff_ffff_ffff
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use via_core::BoardSpec;
+    use via_core::Design;
 
     #[test]
     fn pcb_export_setup_uses_board_rules() {
-        let mut spec = BoardSpec::new("rules_demo");
-        spec.rules_mut()
+        let mut design = Design::new("rules_demo");
+        design
+            .rules_mut()
             .set_default_track_width_mm(0.42)
             .set_clearance_mm(0.23)
             .set_via(0.9, 0.45);
-        let board = spec.build().unwrap();
+        let board = design.build().unwrap();
         let layout = Layout {
             board: "rules_demo".to_owned(),
             modules: Vec::new(),
@@ -645,7 +697,7 @@ mod tests {
             tracks: Vec::new(),
         };
 
-        let text = render_kicad_pcb(&board, &layout);
+        let text = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new());
 
         assert!(text.contains("(last_trace_width 0.42)"));
         assert!(text.contains("(trace_clearance 0.23)"));
@@ -655,8 +707,8 @@ mod tests {
     }
 
     #[test]
-    fn polar_adjuster_pcb_export_contains_rules_geometry_and_copper() {
-        let board = via_examples::polar_adjuster::polar_adjuster_v0_board().unwrap();
+    fn debug_io_demo_pcb_export_contains_rules_geometry_and_copper() {
+        let board = via_examples::debug_io_demo::debug_io_demo_board().unwrap();
         let modules = board
             .modules()
             .enumerate()
@@ -669,7 +721,7 @@ mod tests {
             })
             .collect();
         let layout = Layout {
-            board: "polar_adjuster_v0".to_owned(),
+            board: "debug_io_demo".to_owned(),
             modules,
             outline: Some(LayoutOutline {
                 points: vec![
@@ -682,7 +734,7 @@ mod tests {
             copper: LayoutCopper {
                 segments: vec![LayoutSegment {
                     id: "seg-12v".to_owned(),
-                    net: "12V_IN".to_owned(),
+                    net: "5V_IN".to_owned(),
                     layer: "F.Cu".to_owned(),
                     width: 0.8,
                     a: Point { x: 10.0, y: 10.0 },
@@ -690,7 +742,7 @@ mod tests {
                 }],
                 vias: vec![LayoutVia {
                     id: "via-12v".to_owned(),
-                    net: "12V_IN".to_owned(),
+                    net: "5V_IN".to_owned(),
                     x: 30.0,
                     y: 10.0,
                     drill: 0.4,
@@ -700,27 +752,44 @@ mod tests {
             tracks: Vec::new(),
         };
 
-        let text = render_kicad_pcb(&board, &layout);
+        let text = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new());
 
         assert!(text.contains("(last_trace_width 0.3)"));
         assert!(text.contains("(trace_clearance 0.2)"));
         assert!(text.contains("(via_size 0.8)"));
         assert!(text.contains("(via_drill 0.4)"));
         assert!(text.contains("(net "));
-        assert!(text.contains("\"12V_IN\""));
-        assert!(
-            text.contains(
-                "(footprint \"via_generated:ESP32-S3-N16R8_DevBoard_2x22_P2.54_Row25.40\""
-            )
-        );
-        assert!(text.contains(
-            "(footprint \"via_generated:SilentStepStick_TMC2209_v20_CarrierSocket_2x8_Row12p70\""
-        ));
-        assert!(text.contains(
-            "(footprint \"via_generated:DC005_5p5x2p1_RightAngle_THT_Drawing_2_3_4_VERIFY\""
-        ));
+        assert!(text.contains("\"5V_IN\""));
+        assert!(text.contains("(footprint \"FixtureLib:SOT-223\""));
+        assert!(text.contains("(footprint \"FixtureLib:TSSOP-20\""));
+        assert!(text.contains("(footprint \"FixtureLib:LED_0805\""));
         assert!(text.contains("(segment (start 10 10) (end 30 10) (width 0.8) (layer \"F.Cu\")"));
         assert!(text.contains("(via (at 30 10) (size 0.8) (drill 0.4)"));
         assert!(text.contains("(layer \"Edge.Cuts\")"));
+        assert_unique_uuids(&text);
+    }
+
+    fn assert_unique_uuids(text: &str) {
+        let mut seen = std::collections::BTreeSet::new();
+        for uuid in text.lines().filter_map(extract_uuid) {
+            assert_valid_uuid_shape(uuid);
+            assert!(seen.insert(uuid.to_owned()), "duplicate uuid {uuid}");
+        }
+    }
+
+    fn assert_valid_uuid_shape(uuid: &str) {
+        let parts = uuid.split('-').collect::<Vec<_>>();
+        assert_eq!(
+            parts.iter().map(|part| part.len()).collect::<Vec<_>>(),
+            [8, 4, 4, 4, 12],
+            "invalid uuid shape {uuid}"
+        );
+    }
+
+    fn extract_uuid(line: &str) -> Option<&str> {
+        let start = line.find("(uuid \"")? + "(uuid \"".len();
+        let rest = &line[start..];
+        let end = rest.find('"')?;
+        Some(&rest[..end])
     }
 }

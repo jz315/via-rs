@@ -4,7 +4,10 @@ version.workspace = true
 edition.workspace = true
 description = "LCEDA Pro export helpers for via."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-via-core = { path = "../via-core" }
-via-footprint-ir = { path = "../via-footprint-ir" }
+via-core = { version = "=0.1.0", path = "../via-core" }
+via-footprint-ir = { version = "=0.1.0", path = "../via-footprint-ir" }

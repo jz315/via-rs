@@ -1,7 +1,4 @@
-use via_footprint::generators::{
-    esp32_s3_n16r8_devboard_socket, mp1584_4wire_adapter, silentstepstick_tmc2209_v20_socket,
-    terminal_block_1x, tht_header_1x, xh_vertical_1x,
-};
+use via_footprint::generators::{soic8, terminal_block_1x, tht_header_1x, xh_vertical_1x};
 use via_kicad::footprint_pads_from_kicad_mod;
 
 #[test]
@@ -21,16 +18,11 @@ fn parses_generated_footprint_pads() {
 }
 
 #[test]
-fn parses_project_generated_footprints() {
+fn parses_generic_generated_footprints() {
     let generated = [
-        (terminal_block_1x("TerminalBlock_1x05_P5.08", 5).build(), 5),
-        (
-            xh_vertical_1x("XH2p54_1x04_Vertical_THT_VERIFY", 4).build(),
-            4,
-        ),
-        (mp1584_4wire_adapter(), 4),
-        (silentstepstick_tmc2209_v20_socket(), 16),
-        (esp32_s3_n16r8_devboard_socket(), 44),
+        (terminal_block_1x("TB_1x05_P5.08", 5).build(), 5),
+        (xh_vertical_1x("XH_1x04_P2.54_VERIFY", 4).build(), 4),
+        (soic8(), 8),
     ];
 
     for (footprint, expected_pads) in generated {

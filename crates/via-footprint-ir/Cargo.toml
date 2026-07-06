@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 description = "Low-level footprint intermediate representation for via."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-
+serde = { version = "1", features = ["derive"] }

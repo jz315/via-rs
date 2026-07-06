@@ -1,14 +1,15 @@
-use via_core::{BoardSpec, FootprintPads, Part};
+use via_core::{Design, FootprintPads, model::Part};
 use via_footprint_ir::{FootprintIr, GraphicLine, GraphicText, Pad, PadShape, Point, Size};
 
 use crate::export::{render_epru, write_lceda_pro_project};
 use crate::ids::footprint_uuid;
+use crate::model::module_placements;
 
 #[test]
 fn writes_epro2_zip_with_schematic_record_stream() {
-    let mut spec = BoardSpec::new("demo");
-    spec.add_footprint_pads(two_pad_ir_footprint("R_0603"));
-    let r1 = spec
+    let mut design = Design::new("demo");
+    design.add_footprint_pads(two_pad_ir_footprint("R_0603"));
+    let r1 = design
         .add(
             Part::new("R1", "1k")
                 .footprint("R_0603")
@@ -17,10 +18,10 @@ fn writes_epro2_zip_with_schematic_record_stream() {
                 .logic_pin("2", "3V3"),
         )
         .unwrap();
-    spec.net("SIG")
-        .logic("3V3")
-        .connect_all([r1.pin("1"), r1.pin("2")]);
-    let board = spec.build().unwrap();
+    design
+        .logic("SIG", "3V3")
+        .connect_all(&mut design, [r1.pin("1"), r1.pin("2")]);
+    let board = design.build().unwrap();
 
     let path = std::env::temp_dir().join("via_lceda_pro_demo.epro2");
     write_lceda_pro_project(&board, &path).unwrap();
@@ -48,18 +49,19 @@ fn writes_epro2_zip_with_schematic_record_stream() {
 
 #[test]
 fn write_rejects_placeholder_footprint_geometry() {
-    let mut spec = BoardSpec::new("placeholder");
-    spec.add_footprint_pads(FootprintPads::new("Header_1x02", ["1", "2"]));
-    let header = spec
+    let mut design = Design::new("placeholder");
+    design.add_footprint_pads(FootprintPads::new("Header_1x02", ["1", "2"]));
+    let header = design
         .add(
             Part::new("J1", "Header")
                 .footprint("Header_1x02")
                 .pins(["1", "2"]),
         )
         .unwrap();
-    spec.net("N")
-        .connect_all([header.pin("1"), header.pin("2")]);
-    let board = spec.build().unwrap();
+    design
+        .net("N")
+        .connect_all(&mut design, [header.pin("1"), header.pin("2")]);
+    let board = design.build().unwrap();
 
     let path = std::env::temp_dir().join("via_lceda_pro_placeholder.epro2");
     let error = write_lceda_pro_project(&board, &path).unwrap_err();
@@ -72,16 +74,18 @@ fn write_rejects_placeholder_footprint_geometry() {
 
 #[test]
 fn schematic_page_contains_component_device_and_pin_wires() {
-    let mut spec = BoardSpec::new("chain");
-    let m = spec
+    let mut design = Design::new("chain");
+    let m = design
         .add(
             Part::new("J1", "Header")
                 .footprint("Header_1x02")
                 .pins(["1", "2"]),
         )
         .unwrap();
-    spec.net("N").connect_all([m.pin("1"), m.pin("2")]);
-    let board = spec.build().unwrap();
+    design
+        .net("N")
+        .connect_all(&mut design, [m.pin("1"), m.pin("2")]);
+    let board = design.build().unwrap();
 
     let epru = render_epru(&board);
     assert!(epru.contains("\"partId\":\"via_J1_Header.1\""));
@@ -97,18 +101,19 @@ fn schematic_page_contains_component_device_and_pin_wires() {
 
 #[test]
 fn pcb_document_contains_component_instances_and_pad_net_mappings() {
-    let mut spec = BoardSpec::new("pcb_draft");
-    spec.add_footprint_pads(FootprintPads::new("Header_1x02", ["1", "2"]));
-    let header = spec
+    let mut design = Design::new("pcb_draft");
+    design.add_footprint_pads(FootprintPads::new("Header_1x02", ["1", "2"]));
+    let header = design
         .add(
             Part::new("J1", "Header")
                 .footprint("Header_1x02")
                 .pins(["1", "2"]),
         )
         .unwrap();
-    spec.net("N")
-        .connect_all([header.pin("1"), header.pin("2")]);
-    let board = spec.build().unwrap();
+    design
+        .net("N")
+        .connect_all(&mut design, [header.pin("1"), header.pin("2")]);
+    let board = design.build().unwrap();
 
     let epru = render_epru(&board);
     assert!(epru.contains("\"docType\":\"PCB\""));
@@ -118,6 +123,36 @@ fn pcb_document_contains_component_instances_and_pad_net_mappings() {
     assert!(epru.contains("\"type\":\"PAD_NET\""));
     assert!(epru.contains("\"padNet\":\"N\""));
     assert!(epru.contains("[\\\"NET\\\",\\\"N\\\"]"));
+}
+
+#[test]
+fn schematic_module_placements_are_generic_grid_positions() {
+    let mut design = Design::new("generic_placement");
+    let j1 = design
+        .add(
+            Part::new("J1", "Header")
+                .footprint("Header_1x01")
+                .pins(["1"]),
+        )
+        .unwrap();
+    let u4 = design
+        .add(
+            Part::new("U4", "Module")
+                .footprint("Module_1x01")
+                .pins(["1"]),
+        )
+        .unwrap();
+    design
+        .net("N")
+        .connect_all(&mut design, [j1.pin("1"), u4.pin("1")]);
+    let board = design.build().unwrap();
+
+    let placements = module_placements(&board);
+
+    assert_eq!(placements["J1"].x, 120);
+    assert_eq!(placements["J1"].y, -120);
+    assert_eq!(placements["U4"].x, 480);
+    assert_eq!(placements["U4"].y, -120);
 }
 
 #[test]
@@ -167,18 +202,19 @@ fn footprint_ir_geometry_is_rendered_instead_of_placeholder_pads() {
             Point::new(0.0, 0.0),
             "F.SilkS",
         ));
-    let mut spec = BoardSpec::new("real_footprint");
-    spec.add_footprint_pads(FootprintPads::from_ir(footprint));
-    let header = spec
+    let mut design = Design::new("real_footprint");
+    design.add_footprint_pads(FootprintPads::from_ir(footprint));
+    let header = design
         .add(
             Part::new("J1", "Header")
                 .footprint("Real_1x03")
                 .pins(["1", "2", "3"]),
         )
         .unwrap();
-    spec.net("N")
-        .connect_all([header.pin("1"), header.pin("2")]);
-    let board = spec.build().unwrap();
+    design
+        .net("N")
+        .connect_all(&mut design, [header.pin("1"), header.pin("2")]);
+    let board = design.build().unwrap();
 
     let epru = render_epru(&board);
     assert!(epru.contains("\"docType\":\"FOOTPRINT\""));
@@ -211,9 +247,9 @@ fn footprint_ir_geometry_is_rendered_instead_of_placeholder_pads() {
 
 #[test]
 fn symbol_pin_numbers_use_physical_pad_numbers() {
-    let mut spec = BoardSpec::new("mapped");
-    spec.add_footprint_pads(FootprintPads::new("Conn_1x04", ["1", "2", "3", "4"]));
-    let connector = spec
+    let mut design = Design::new("mapped");
+    design.add_footprint_pads(FootprintPads::new("Conn_1x04", ["1", "2", "3", "4"]));
+    let connector = design
         .add(
             Part::new("J1", "Motor")
                 .footprint("Conn_1x04")
@@ -221,9 +257,10 @@ fn symbol_pin_numbers_use_physical_pad_numbers() {
                 .pinmap([("A2", "1"), ("A1", "2"), ("B1", "3"), ("B2", "4")]),
         )
         .unwrap();
-    spec.net("PHASE_A")
-        .connect_all([connector.pin("A1"), connector.pin("A2")]);
-    let board = spec.build().unwrap();
+    design
+        .net("PHASE_A")
+        .connect_all(&mut design, [connector.pin("A1"), connector.pin("A2")]);
+    let board = design.build().unwrap();
 
     let epru = render_epru(&board);
     assert!(epru.contains("\"key\":\"Pin Name\",\"value\":\"A1\""));
@@ -236,10 +273,10 @@ fn symbol_pin_numbers_use_physical_pad_numbers() {
 
 #[test]
 fn multi_pad_logical_pin_expands_to_all_pad_numbers_and_net_wires() {
-    let mut spec = BoardSpec::new("multi_pad");
-    spec.add_footprint_pads(FootprintPads::new("Module", ["1", "2"]));
-    spec.add_footprint_pads(FootprintPads::new("Header_1x01", ["1"]));
-    let module = spec
+    let mut design = Design::new("multi_pad");
+    design.add_footprint_pads(FootprintPads::new("Module", ["1", "2"]));
+    design.add_footprint_pads(FootprintPads::new("Header_1x01", ["1"]));
+    let module = design
         .add(
             Part::new("U1", "Module")
                 .footprint("Module")
@@ -247,16 +284,17 @@ fn multi_pad_logical_pin_expands_to_all_pad_numbers_and_net_wires() {
                 .map_pin_to_pads("GND", ["1", "2"]),
         )
         .unwrap();
-    let header = spec
+    let header = design
         .add(
             Part::new("J1", "Header")
                 .footprint("Header_1x01")
                 .pins(["1"]),
         )
         .unwrap();
-    spec.net("GND")
-        .connect_all([module.pin("GND"), header.pin("1")]);
-    let board = spec.build().unwrap();
+    design
+        .ground("GND")
+        .connect_all(&mut design, [module.pin("GND"), header.pin("1")]);
+    let board = design.build().unwrap();
 
     let epru = render_epru(&board);
     assert!(epru.contains("\"key\":\"Pin Name\",\"value\":\"GND\""));

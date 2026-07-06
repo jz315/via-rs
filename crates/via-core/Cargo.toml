@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 description = "Core Rust circuit model for via."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-via-footprint-ir = { path = "../via-footprint-ir" }
+serde = { version = "1", features = ["derive"] }
+via-footprint-ir = { version = "=0.1.0", path = "../via-footprint-ir" }

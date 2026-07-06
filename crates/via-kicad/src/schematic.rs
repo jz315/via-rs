@@ -95,12 +95,12 @@ mod tests {
     use crate::schematic::render::render_pin_connection;
     use crate::schematic::util::stable_uuid;
     use std::collections::BTreeMap;
-    use via_core::{BoardSpec, Part};
+    use via_core::{Design, SymbolSide, model::Part};
 
     #[test]
     fn writes_openable_project_files() {
-        let mut spec = BoardSpec::new("demo");
-        let u1 = spec
+        let mut design = Design::new("demo");
+        let u1 = design
             .add(
                 Part::new("U1", "Demo MCU")
                     .footprint("Demo_MCU")
@@ -109,22 +109,24 @@ mod tests {
                     .map_pin_to_pads("GND", ["1", "2"]),
             )
             .unwrap();
-        let j1 = spec
+        let j1 = design
             .add(
                 Part::new("J1", "Connector")
                     .footprint("Conn_01x02")
                     .pins(["1", "2"]),
             )
             .unwrap();
-        spec.net("SIGNAL")
-            .connect_all([u1.pin("GPIO4"), j1.pin("1")]);
-        spec.net("GND")
-            .ground()
-            .connect_all([u1.pin("GND"), j1.pin("2")]);
-        spec.rules_mut()
+        design
+            .net("SIGNAL")
+            .connect_all(&mut design, [u1.pin("GPIO4"), j1.pin("1")]);
+        design
+            .ground("GND")
+            .connect_all(&mut design, [u1.pin("GND"), j1.pin("2")]);
+        design
+            .rules_mut()
             .set_default_track_width_mm(0.42)
             .set_clearance_mm(0.23);
-        let board = spec.build().unwrap();
+        let board = design.build().unwrap();
 
         let out = std::env::temp_dir().join(format!("via_sch_test_{}", stable_uuid("demo")));
         let options = SchematicProjectOptions::new("DEMO")
@@ -147,6 +149,60 @@ mod tests {
     }
 
     #[test]
+    fn same_footprint_modules_keep_their_own_logical_symbol_pins() {
+        let mut design = Design::new("shared_footprint");
+        let u1 = design
+            .add(
+                Part::new("U1", "Input")
+                    .footprint("Shared_1Pin")
+                    .pins(["A"])
+                    .map_pin("A", "1"),
+            )
+            .unwrap();
+        let u2 = design
+            .add(
+                Part::new("U2", "Output")
+                    .footprint("Shared_1Pin")
+                    .pins(["B"])
+                    .map_pin("B", "1"),
+            )
+            .unwrap();
+        let j1 = design
+            .add(
+                Part::new("J1", "Input Tap")
+                    .footprint("Tap_1Pin")
+                    .pins(["1"]),
+            )
+            .unwrap();
+        let j2 = design
+            .add(
+                Part::new("J2", "Output Tap")
+                    .footprint("Tap_1Pin")
+                    .pins(["1"]),
+            )
+            .unwrap();
+        design
+            .net("NET_A")
+            .connect_all(&mut design, [u1.pin("A"), j1.pin("1")]);
+        design
+            .net("NET_B")
+            .connect_all(&mut design, [u2.pin("B"), j2.pin("1")]);
+        let board = design.build().unwrap();
+
+        let out = std::env::temp_dir().join(format!("via_sch_shared_{}", stable_uuid("shared")));
+        write_schematic_project(&board, &out, &SchematicProjectOptions::new("SHARED")).unwrap();
+
+        let schematic = std::fs::read_to_string(out.join("shared_footprint.kicad_sch")).unwrap();
+        assert!(schematic.contains("(label \"NET_A\""));
+        assert!(schematic.contains("(label \"NET_B\""));
+        assert!(!schematic.contains("(no_connect "));
+        assert!(schematic.contains("SHARED:Shared_1Pin_U1"));
+        assert!(schematic.contains("SHARED:Shared_1Pin_U2"));
+
+        let _ = std::fs::remove_dir_all(out);
+    }
+
+    #[test]
     fn pin_connection_uses_kicad_symbol_y_axis() {
         let module = PlacedModule {
             refdes: "U1".to_owned(),
@@ -162,6 +218,7 @@ mod tests {
             logical_pin: "A".to_owned(),
             number: "1".to_owned(),
             name: "A".to_owned(),
+            side: SymbolSide::Left,
             x: -25.4,
             y: 5.08,
             rotation: 0,

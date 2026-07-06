@@ -3,9 +3,11 @@ use std::io;
 use std::path::Path;
 use std::{error, fmt};
 
+use serde::{Deserialize, Serialize};
+
 pub mod kicad;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FootprintIr {
     name: String,
     description: Option<String>,
@@ -191,13 +193,13 @@ impl FootprintIr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FootprintProperty {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pad {
     pub number: String,
     pub kind: PadKind,
@@ -277,7 +279,7 @@ impl Pad {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PadKind {
     ThruHole,
     NpThruHole,
@@ -290,7 +292,7 @@ impl PadKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PadDrill {
     pub x: f64,
     pub y: f64,
@@ -317,7 +319,7 @@ impl PadDrill {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PadShape {
     Circle,
     Oval,
@@ -326,7 +328,7 @@ pub enum PadShape {
     Trapezoid,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphicText {
     pub kind: TextKind,
     pub text: String,
@@ -385,21 +387,21 @@ impl GraphicText {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextKind {
     Reference,
     Value,
     User,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextJustify {
     Left,
     Right,
     Center,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphicLine {
     pub start: Point,
     pub end: Point,
@@ -418,7 +420,7 @@ impl GraphicLine {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -430,7 +432,7 @@ impl Point {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Size {
     pub x: f64,
     pub y: f64,
@@ -567,6 +569,20 @@ mod tests {
         let text = kicad::try_render_kicad_mod(&footprint).unwrap();
         assert!(text.contains("roundrect"));
         assert!(text.contains("(roundrect_rratio 0.25)"));
+    }
+
+    #[test]
+    fn renders_smd_attribute_for_smd_only_footprints() {
+        let mut footprint = FootprintIr::new("SmdDemo");
+        footprint.add_pad(Pad::smd(
+            "1",
+            PadShape::Rect,
+            Point::new(0.0, 0.0),
+            Size::new(1.2, 0.6),
+        ));
+
+        let text = kicad::try_render_kicad_mod(&footprint).unwrap();
+        assert!(text.contains("  (attr smd)\n"));
     }
 
     #[test]

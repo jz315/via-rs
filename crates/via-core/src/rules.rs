@@ -82,6 +82,14 @@ impl BoardRules {
         self
     }
 
+    pub fn set_net_class_track_widths_mm<I>(&mut self, widths: I) -> &mut Self
+    where
+        I: IntoIterator<Item = (String, f64)>,
+    {
+        self.net_class_track_width_mm = widths.into_iter().collect();
+        self
+    }
+
     pub fn set_clearance_mm(&mut self, value: f64) -> &mut Self {
         self.clearance_mm = value;
         self

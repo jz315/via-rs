@@ -27,65 +27,24 @@ pub fn terminal_block_1x(name: impl Into<String>, pins: usize) -> TerminalBlock1
     }
 }
 
-pub fn dc005_5p5x2p1_right_angle_drawing_verify(name: impl Into<String>) -> GeneratedFootprint {
-    let name = name.into();
-    let mut footprint = FootprintIr::new(name.clone())
-        .description("DC-005 style right-angle DC barrel jack, 5.5x2.1mm, user drawing pins 2/3/4")
-        .tag("via-generated")
-        .tag("dc005")
-        .tag("barrel-jack")
-        .tag("verify");
+pub fn terminal_block_1x02_p5p08() -> GeneratedFootprint {
+    terminal_block_1x("TB_1x02_P5.08", 2).build()
+}
 
-    footprint
-        .add_pad(Pad::thru_hole_slot(
-            "3",
-            PadShape::Oval,
-            Point::new(7.5, 0.0),
-            Size::new(2.2, 4.4),
-            1.0,
-            3.2,
-        ))
-        .add_pad(Pad::thru_hole_slot(
-            "4",
-            PadShape::Oval,
-            Point::new(13.7, 0.0),
-            Size::new(2.2, 4.4),
-            1.0,
-            3.2,
-        ))
-        .add_pad(Pad::thru_hole_slot(
-            "2",
-            PadShape::Oval,
-            Point::new(11.0, 4.7),
-            Size::new(4.4, 2.2),
-            3.2,
-            1.0,
-        ))
-        .add_rect(
-            Point::new(0.0, -4.5),
-            Point::new(14.0, 4.5),
-            "F.SilkS",
-            0.15,
-        )
-        .add_rect(Point::new(0.0, -4.5), Point::new(14.0, 4.5), "F.Fab", 0.1)
-        .add_rect(
-            Point::new(-0.7, -5.5),
-            Point::new(15.0, 6.4),
-            "F.CrtYd",
-            0.05,
-        )
-        .add_text(GraphicText::reference("REF**", Point::new(0.0, -3.0), "F.SilkS").size(1.0, 1.0))
-        .add_text(GraphicText::value(name.clone(), Point::new(0.0, 3.0), "F.Fab").size(1.0, 1.0))
-        .add_text(GraphicText::user("4=+12V", Point::new(13.7, -5.8), "F.SilkS").size(0.75, 0.75))
-        .add_text(
-            GraphicText::user("2/3 VERIFY", Point::new(9.4, 7.1), "F.SilkS").size(0.75, 0.75),
-        );
+pub fn terminal_block_1x03_p5p08() -> GeneratedFootprint {
+    terminal_block_1x("TB_1x03_P5.08", 3).build()
+}
 
-    GeneratedFootprint::new(
-        footprint,
-        FootprintMetadata::generated("dc005_5p5x2p1_right_angle_drawing_verify")
-            .notes("Drawing-based DC-005 geometry; pad 4 = 12V_IN, pad 2 tentative sleeve/GND, pad 3 tentative switched contact. Pads use oval slot drills in VIA IR; verify against the purchased jack before fabrication."),
-    )
+pub fn terminal_block_1x04_p5p08() -> GeneratedFootprint {
+    terminal_block_1x("TB_1x04_P5.08", 4).build()
+}
+
+pub fn terminal_block_1x05_p5p08() -> GeneratedFootprint {
+    terminal_block_1x("TB_1x05_P5.08", 5).build()
+}
+
+pub fn terminal_block_1x06_p5p08() -> GeneratedFootprint {
+    terminal_block_1x("TB_1x06_P5.08", 6).build()
 }
 
 impl TerminalBlock1x {
@@ -181,6 +140,48 @@ pub fn xh_vertical_1x(name: impl Into<String>, pins: usize) -> XhVertical1x {
         body_depth: 7.0,
         labels: Vec::new(),
     }
+}
+
+pub fn jst_xh_1x02_p2p54_vertical_verify() -> GeneratedFootprint {
+    xh_vertical_1x("XH_1x02_P2.54_VERIFY", 2).build()
+}
+
+pub fn jst_xh_1x03_p2p54_vertical_verify() -> GeneratedFootprint {
+    xh_vertical_1x("XH_1x03_P2.54_VERIFY", 3).build()
+}
+
+pub fn jst_xh_1x04_p2p54_vertical_verify() -> GeneratedFootprint {
+    xh_vertical_1x("XH_1x04_P2.54_VERIFY", 4).build()
+}
+
+pub fn jst_xh_1x05_p2p54_vertical_verify() -> GeneratedFootprint {
+    xh_vertical_1x("XH_1x05_P2.54_VERIFY", 5).build()
+}
+
+pub fn jst_xh_1x06_p2p54_vertical_verify() -> GeneratedFootprint {
+    xh_vertical_1x("XH_1x06_P2.54_VERIFY", 6).build()
+}
+
+pub fn jst_ph_1x02_p2p00_vertical_verify() -> GeneratedFootprint {
+    ph_vertical_1x("PH_1x02_P2.00_VERIFY", 2)
+}
+
+pub fn jst_ph_1x03_p2p00_vertical_verify() -> GeneratedFootprint {
+    ph_vertical_1x("PH_1x03_P2.00_VERIFY", 3)
+}
+
+pub fn jst_ph_1x04_p2p00_vertical_verify() -> GeneratedFootprint {
+    ph_vertical_1x("PH_1x04_P2.00_VERIFY", 4)
+}
+
+fn ph_vertical_1x(name: impl Into<String>, pins: usize) -> GeneratedFootprint {
+    let width = pins.saturating_sub(1) as f64 * 2.0 + 4.2;
+    xh_vertical_1x(name, pins)
+        .pitch(2.0)
+        .drill(0.8)
+        .pad_diameter(1.45)
+        .body(width, 5.8)
+        .build()
 }
 
 impl XhVertical1x {

@@ -187,7 +187,7 @@ pub fn board_snapshot(
     diagnostics: &[Diagnostic],
     production_diagnostics: &[Diagnostic],
 ) -> String {
-    let footprints = footprint_geometries_json();
+    let footprints = footprint_geometries_json(board);
     let signatures = source_signatures(board, &footprints);
     let source_hash = source_hash(&signatures);
     to_pretty_json(&BoardSnapshot {
@@ -380,12 +380,12 @@ fn rules_json(board: &Board) -> RulesJson {
     }
 }
 
-fn footprint_geometries_json() -> Vec<FootprintJson> {
-    via_parts_harmonic::generated_footprints()
-        .into_iter()
-        .map(|footprint| {
-            let ir = footprint.into_ir();
-            FootprintJson {
+fn footprint_geometries_json(board: &Board) -> Vec<FootprintJson> {
+    board
+        .footprints()
+        .filter_map(|footprint| {
+            let ir = footprint.ir()?;
+            Some(FootprintJson {
                 name: ir.name().to_owned(),
                 pads: ir
                     .pads()
@@ -421,7 +421,7 @@ fn footprint_geometries_json() -> Vec<FootprintJson> {
                         width: line.width,
                     })
                     .collect(),
-            }
+            })
         })
         .collect()
 }
@@ -536,7 +536,7 @@ fn object_ref_json(object: &ObjectRef) -> ObjectRefJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use via_core::{BoardSpec, ObjectRef, Part};
+    use via_core::{Design, ObjectRef, model::Part};
 
     #[test]
     fn escapes_json_strings() {
@@ -571,8 +571,8 @@ mod tests {
 
     #[test]
     fn renders_board_snapshot() {
-        let mut spec = BoardSpec::new("demo");
-        let module = spec
+        let mut design = Design::new("demo");
+        let module = design
             .add(
                 Part::new("R1", "1k")
                     .footprint("R_0603")
@@ -580,9 +580,10 @@ mod tests {
                     .lcsc("C21190"),
             )
             .unwrap();
-        spec.net("N")
-            .connect_all([module.pin("1"), module.pin("2")]);
-        let board = spec.build().unwrap();
+        design
+            .net("N")
+            .connect_all(&mut design, [module.pin("1"), module.pin("2")]);
+        let board = design.build().unwrap();
 
         let json = board_snapshot(&board, 0, &[], &[]);
 
@@ -597,21 +598,16 @@ mod tests {
     }
 
     #[test]
-    fn renders_polar_adjuster_snapshot_contract() {
-        let board = via_examples::polar_adjuster::polar_adjuster_v0_board().unwrap();
+    fn renders_debug_io_demo_snapshot_contract() {
+        let board = via_examples::debug_io_demo::debug_io_demo_board().unwrap();
         let json = board_snapshot(&board, board.footprints().count(), &[], &[]);
 
         assert!(json.contains("\"version\": 3"));
-        assert!(json.contains("\"board\": \"polar_adjuster_v0\""));
-        assert!(json.contains("\"footprints_loaded\": 14"));
-        assert!(json.contains("\"name\": \"ESP32-S3-N16R8_DevBoard_2x22_P2.54_Row25.40\""));
-        assert!(
-            json.contains("\"name\": \"SilentStepStick_TMC2209_v20_CarrierSocket_2x8_Row12p70\"")
-        );
-        assert!(json.contains("\"name\": \"DC005_5p5x2p1_RightAngle_THT_Drawing_2_3_4_VERIFY\""));
-        assert!(json.contains("\"name\": \"12V_IN\""));
-        assert!(json.contains("\"class\": \"power:12V\""));
-        assert!(json.contains("\"power:12V\": 0.8"));
-        assert!(json.contains("\"motor-phase\": 0.5"));
+        assert!(json.contains("\"board\": \"debug_io_demo\""));
+        assert!(json.contains("\"name\": \"TSSOP-20\""));
+        assert!(json.contains("\"name\": \"LED_0805\""));
+        assert!(json.contains("\"name\": \"I2C_SCL\""));
+        assert!(json.contains("\"class\": \"logic:3V3\""));
+        assert!(json.contains("\"logic:3V3\": 0.25"));
     }
 }

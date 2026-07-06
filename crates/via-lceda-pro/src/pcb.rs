@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use via_core::{Board, Part};
+use via_core::{Board, model::Part};
 
 use crate::epru::EpruWriter;
 use crate::ids::{

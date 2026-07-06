@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::export::Exporter;
 use crate::footprint::FootprintPads;
-use crate::model::{Board, Net, Part, PinRef};
+use crate::model::{Board, ModuleId, Net, Part, PinRef};
 use crate::rules::BoardRules;
 use crate::spec::{BoardSpec, Component, DecouplerPins};
 
@@ -85,14 +85,11 @@ impl Design {
     where
         C: Component,
     {
-        self.spec.add(component)
+        component.add_to(self)
     }
 
-    pub fn add_part(&mut self, part: Part) -> Result<NetlessPartHandle> {
-        let id = self.spec.add_part(part)?;
-        Ok(NetlessPartHandle {
-            refdes: id.refdes().to_owned(),
-        })
+    pub fn add_part(&mut self, part: Part) -> Result<ModuleId> {
+        self.spec.add_part(part)
     }
 
     pub fn add_footprint_pads(&mut self, footprint: FootprintPads) -> &mut Self {
@@ -245,24 +242,6 @@ enum NetKind {
     Power { domain: String },
     Logic { domain: String },
     MotorPhase,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NetlessPartHandle {
-    refdes: String,
-}
-
-impl NetlessPartHandle {
-    pub fn refdes(&self) -> &str {
-        &self.refdes
-    }
-
-    pub fn pin(&self, pin: impl Into<String>) -> PinRef {
-        PinRef {
-            module: self.refdes.clone(),
-            pin: pin.into(),
-        }
-    }
 }
 
 #[cfg(test)]

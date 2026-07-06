@@ -23,7 +23,7 @@ pub fn try_render_kicad_mod(footprint: &FootprintIr) -> Result<String, Footprint
             escape(&footprint.tags().join(" "))
         ));
     }
-    out.push_str("  (attr through_hole)\n");
+    out.push_str(&format!("  (attr {})\n", footprint_attr(footprint)));
     for property in footprint.properties() {
         out.push_str(&render_property(property));
     }
@@ -47,6 +47,18 @@ fn render_property(property: &FootprintProperty) -> String {
         escape(&property.value),
         stable_uuid(&format!("property:{}:{}", property.name, property.value))
     )
+}
+
+fn footprint_attr(footprint: &FootprintIr) -> &'static str {
+    if footprint
+        .pads()
+        .iter()
+        .all(|pad| matches!(pad.kind, PadKind::Smd))
+    {
+        "smd"
+    } else {
+        "through_hole"
+    }
 }
 
 fn render_text(text: &GraphicText) -> String {

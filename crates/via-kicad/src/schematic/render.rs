@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use via_core::Board;
+use via_core::{Board, SymbolSide};
 
 use super::model::{PlacedModule, SymbolPin, SymbolTemplate};
 use super::util::{escape, fmt_num, sanitize_symbol, stable_uuid};
@@ -82,7 +82,7 @@ fn render_symbol_template(template: &SymbolTemplate, library: Option<&str>) -> S
         fmt_num(top + 3.0)
     ));
     out.push_str(&format!(
-        "      (property \"Value\" \"{}\" (at 0 {} 0) (effects (font (size 1.27 1.27))))\n",
+        "      (property \"Value\" \"{}\" (at 0 {} 0) (hide yes) (effects (font (size 1.27 1.27))))\n",
         escape(&template.name),
         fmt_num(bottom - 3.0)
     ));
@@ -150,7 +150,7 @@ fn render_symbol_instance(module: &PlacedModule, options: &SchematicProjectOptio
         fmt_num(top)
     ));
     out.push_str(&format!(
-        "    (property \"Value\" \"{}\" (at {} {} 0) (effects (font (size 1.27 1.27))))\n",
+        "    (property \"Value\" \"{}\" (at {} {} 0) (hide yes) (effects (font (size 1.27 1.27))))\n",
         escape(&module.value),
         fmt_num(module.x),
         fmt_num(bottom)
@@ -206,14 +206,6 @@ pub(super) fn render_pin_connection(
 ) -> String {
     let x0 = module.x + pin.x;
     let y = module.y - pin.y;
-    let goes_left = pin.rotation == 0;
-    let x1 = if goes_left {
-        x0 - LABEL_STUB
-    } else {
-        x0 + LABEL_STUB
-    };
-    let label_rot = if goes_left { 180 } else { 0 };
-    let justify = if goes_left { "right" } else { "left" };
     let Some(net_name) = pin_nets.get(&(module.refdes.clone(), pin.logical_pin.clone())) else {
         return format!(
             "  (no_connect (at {} {}) (uuid \"{}\"))\n",
@@ -222,20 +214,26 @@ pub(super) fn render_pin_connection(
             stable_uuid(&format!("noconnect:{}:{}", module.refdes, pin.number))
         );
     };
+    let (x1, y1, label_x, label_y, label_rot, justify) = match pin.side {
+        SymbolSide::Left => (x0 - LABEL_STUB, y, x0 - LABEL_STUB, y, 180, "right"),
+        SymbolSide::Right => (x0 + LABEL_STUB, y, x0 + LABEL_STUB, y, 0, "left"),
+        SymbolSide::Top => (x0, y - LABEL_STUB, x0, y - LABEL_STUB, 90, "left"),
+        SymbolSide::Bottom => (x0, y + LABEL_STUB, x0, y + LABEL_STUB, 270, "left"),
+    };
 
     format!(
         "  (wire (pts (xy {} {}) (xy {} {})) (stroke (width 0) (type default)) (uuid \"{}\"))\n  (label \"{}\" (at {} {} {}) (effects (font (size 1.27 1.27)) (justify {})) (uuid \"{}\"))\n",
         fmt_num(x0),
         fmt_num(y),
         fmt_num(x1),
-        fmt_num(y),
+        fmt_num(y1),
         stable_uuid(&format!(
             "wire:{}:{}:{}",
             module.refdes, pin.number, net_name
         )),
         escape(net_name),
-        fmt_num(x1),
-        fmt_num(y),
+        fmt_num(label_x),
+        fmt_num(label_y),
         label_rot,
         justify,
         stable_uuid(&format!(

@@ -4,10 +4,12 @@ version.workspace = true
 edition.workspace = true
 description = "KiCad import and export helpers for via."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-via-core = { path = "../via-core" }
+via-core = { version = "=0.1.0", path = "../via-core" }
 
 [dev-dependencies]
-via-footprint = { path = "../via-footprint" }
-
+via-footprint = { version = "=0.1.0", path = "../via-footprint" }

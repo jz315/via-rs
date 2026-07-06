@@ -1,28 +1,24 @@
 pub use via_core as core;
+pub use via_footprint::fp;
 pub use via_footprint_ir as footprint_ir;
+pub use via_project as project;
+
+pub mod design_ext;
+pub mod units;
 
 pub mod parts {
     pub use via_parts::*;
-    pub use via_parts_harmonic::{
-        Dc005BarrelJack, Esp32S3N16R8, Header2, Mp1584BuckAdapter, SilentStepStickTmc2209V20,
-        TerminalBlock5, Xh2p54Motor4, dc005_barrel_jack, esp32_s3_n16r8, generated_footprint_pads,
-        generated_footprints, mp1584_buck_adapter, pin_header_1x02, silentstepstick_tmc2209_v20,
-        terminal_block_1x05, write_generated_footprints, xh2p54_motor4,
-    };
-}
-
-pub mod patterns {
-    pub use via_patterns_harmonic::*;
-    pub use via_patterns_motion::*;
 }
 
 pub mod prelude {
-    pub use crate::{parts, patterns};
+    pub use crate::design_ext::{DesignExt, RailBuilder};
+    pub use crate::units::{Capacitance, QuantityExt, RatedVoltage, Resistance};
+    pub use crate::{fp, parts};
     pub use via_core::{
         Board, BoardRules, CheckProfile, Component, Design, Diagnostic, DiagnosticSeverity,
-        ElectricalClass, Error, Exporter, FootprintPads, ModuleId, Net, NetHandle,
-        NetlessPartHandle, ObjectRef, Part, PartSpec, PartSpecBuilder, PinRef, PinSpec, Result,
-        Unit, Voltage, part, pin,
+        ElectricalClass, Error, Exporter, Footprint, FootprintAsset, FootprintPads, ModuleId,
+        NetHandle, ObjectRef, PinRef, PinSpec, Result, SymbolKind, SymbolSide, SymbolSpec, Unit,
+        Voltage, part, pin, sym,
     };
 
     pub type Rules = BoardRules;

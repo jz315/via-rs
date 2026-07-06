@@ -1,4 +1,4 @@
-use via_core::Part;
+use via_core::model::Part;
 
 pub(crate) fn footprint_name(module: &Part) -> &str {
     module.footprint_name().unwrap_or("via_unassigned")

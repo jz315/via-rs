@@ -37,10 +37,10 @@ pub fn demo_i2c_sensor(refdes: &str) -> impl Component<Output = DemoI2cSensor> {
 
 pub fn custom_part_board() -> Result<Board> {
     let mut design = Design::new("modern_custom_part");
-    let v3v3 = design.power("3V3", Voltage::dc(3.3));
+    let v3v3 = design.rail("3V3").dc(3.3);
     let ground = design.ground("GND");
-    let scl = design.logic("I2C_SCL", "3V3");
-    let sda = design.logic("I2C_SDA", "3V3");
+    let scl = design.signal("I2C_SCL", "3V3");
+    let sda = design.signal("I2C_SDA", "3V3");
 
     let sensor = design.add(demo_i2c_sensor("U1"))?;
     let header = design.add(
@@ -52,10 +52,10 @@ pub fn custom_part_board() -> Result<Board> {
             .pin(pin("SDA").logic("3V3")),
     )?;
 
-    v3v3.connect_all(&mut design, [header.pin("3V3"), sensor.vcc()]);
-    ground.connect_all(&mut design, [header.pin("GND"), sensor.ground()]);
-    scl.connect_all(&mut design, [header.pin("SCL"), sensor.scl()]);
-    sda.connect_all(&mut design, [header.pin("SDA"), sensor.sda()]);
+    design.connect(&v3v3, [header.pin("3V3"), sensor.vcc()]);
+    design.connect(&ground, [header.pin("GND"), sensor.ground()]);
+    design.connect(&scl, [header.pin("SCL"), sensor.scl()]);
+    design.connect(&sda, [header.pin("SDA"), sensor.sda()]);
 
     design.check(CheckProfile::Draft)?;
     Ok(design.into_unchecked_board())

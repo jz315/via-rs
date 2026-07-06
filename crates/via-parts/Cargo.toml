@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 description = "Generic reusable component definitions for VIA designs."
 license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
-via-core = { path = "../via-core" }
+via-core = { version = "=0.1.0", path = "../via-core" }
+via-footprint = { version = "=0.1.0", path = "../via-footprint" }
