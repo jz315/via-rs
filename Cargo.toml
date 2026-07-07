@@ -20,5 +20,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/jz315/via-rs"
+homepage = "https://github.com/jz315/via-rs"
 categories = ["development-tools"]
 keywords = ["eda", "pcb", "kicad", "electronics"]

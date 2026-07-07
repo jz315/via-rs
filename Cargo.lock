@@ -829,17 +829,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "via"
-version = "0.1.0"
-dependencies = [
- "via-core",
- "via-footprint",
- "via-footprint-ir",
- "via-parts",
- "via-project",
-]
-
-[[package]]
 name = "via-cli"
 version = "0.1.0"
 dependencies = [
@@ -867,8 +856,8 @@ dependencies = [
 name = "via-examples"
 version = "0.1.0"
 dependencies = [
- "via",
  "via-core",
+ "via-rs",
 ]
 
 [[package]]
@@ -935,6 +924,17 @@ dependencies = [
  "serde_json",
  "toml",
  "via-core",
+]
+
+[[package]]
+name = "via-rs"
+version = "0.1.0"
+dependencies = [
+ "via-core",
+ "via-footprint",
+ "via-footprint-ir",
+ "via-parts",
+ "via-project",
 ]
 
 [[package]]

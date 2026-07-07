@@ -3,10 +3,13 @@ name = "via-cli"
 version.workspace = true
 edition.workspace = true
 description = "Project-oriented CLI wrapper for via checks, snapshots, BOMs, and exports."
+repository.workspace = true
+homepage.workspace = true
 license.workspace = true
 readme.workspace = true
 categories.workspace = true
 keywords.workspace = true
+publish = false
 
 [[bin]]
 name = "via"

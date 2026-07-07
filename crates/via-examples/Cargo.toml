@@ -3,11 +3,14 @@ name = "via-examples"
 version.workspace = true
 edition.workspace = true
 description = "Example and project boards built on the via library crates."
+repository.workspace = true
+homepage.workspace = true
 license.workspace = true
 readme.workspace = true
 categories.workspace = true
 keywords.workspace = true
+publish = false
 
 [dependencies]
-via = { version = "=0.1.0", path = "../via" }
+via = { package = "via-rs", version = "=0.1.0", path = "../via" }
 via-core = { version = "=0.1.0", path = "../via-core" }

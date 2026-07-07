@@ -1,12 +1,18 @@
 [package]
-name = "via"
+name = "via-rs"
 version.workspace = true
 edition.workspace = true
 description = "User-facing facade crate for the VIA Rust EDA library."
+repository.workspace = true
+homepage.workspace = true
 license.workspace = true
 readme.workspace = true
 categories.workspace = true
 keywords.workspace = true
+
+[lib]
+name = "via"
+path = "src/lib.rs"
 
 [dependencies]
 via-core = { version = "=0.1.0", path = "../via-core" }
