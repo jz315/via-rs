@@ -69,10 +69,10 @@ pub fn board() -> Result<Board> {
 ```
 
 For exporter workflows, install the CLI package. The package name is
-`via-rs-cli`, and the installed command is `via`:
+`via-pcb-cli`, and the installed command is `via`:
 
 ```powershell
-cargo install via-rs-cli
+cargo install via-pcb-cli
 via check <design-name>
 via export kicad <design-name>
 ```
@@ -105,7 +105,7 @@ via = { package = "via-pcb", path = "../via-rs/crates/via" }
 - `via-lceda-pro`: LCEDA Pro package export.
 - `via-project`: `via.toml` project loading and external design providers.
 - `via-examples`: generic examples for tests and documentation snippets.
-- `via-rs-cli` (`crates/via-cli`): project-oriented command-line wrapper for
+- `via-pcb-cli` (`crates/via-cli`): project-oriented command-line wrapper for
   checks, snapshots, BOMs, and export. It installs the `via` binary.
 
 ## Minimal Example
@@ -252,7 +252,7 @@ fn main() -> Result<()> {
 Project commands:
 
 ```powershell
-cargo install via-rs-cli
+cargo install via-pcb-cli
 via ir <design-name> --out <board-ir-json>
 via check <design-name>
 via check <design-name> --production

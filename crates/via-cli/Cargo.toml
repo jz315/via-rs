@@ -1,5 +1,5 @@
 [package]
-name = "via-rs-cli"
+name = "via-pcb-cli"
 version.workspace = true
 edition.workspace = true
 description = "Project-oriented CLI wrapper for via checks, snapshots, BOMs, and exports."

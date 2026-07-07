@@ -912,17 +912,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "via-project"
-version = "0.1.1"
-dependencies = [
- "serde",
- "serde_json",
- "toml",
- "via-core",
-]
-
-[[package]]
-name = "via-rs-cli"
+name = "via-pcb-cli"
 version = "0.1.1"
 dependencies = [
  "clap",
@@ -935,6 +925,16 @@ dependencies = [
  "via-kicad-sexp",
  "via-lceda-pro",
  "via-project",
+]
+
+[[package]]
+name = "via-project"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
+ "via-core",
 ]
 
 [[package]]

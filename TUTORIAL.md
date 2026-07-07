@@ -245,7 +245,7 @@ fn main() -> Result<()> {
 Then run the project workflow:
 
 ```powershell
-cargo install via-rs-cli
+cargo install via-pcb-cli
 via ir <design-name> --out <board-ir-json>
 via check <design-name>
 via check <design-name> --production
