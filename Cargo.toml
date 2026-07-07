@@ -4,6 +4,7 @@ members = [
     "crates/via-core",
     "crates/via-footprint-ir",
     "crates/via-footprint",
+    "crates/via-kicad-sexp",
     "crates/via-kicad",
     "crates/via-kicad-footprints",
     "crates/via-lceda-pro",

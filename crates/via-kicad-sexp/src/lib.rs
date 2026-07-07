@@ -2,50 +2,50 @@ use std::error;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Sexp {
+pub enum Sexp {
     Atom(Atom),
     List(Vec<Sexp>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Atom {
+pub struct Atom {
     text: String,
     quoted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ParseError {
+pub struct ParseError {
     message: String,
     offset: usize,
 }
 
 impl Sexp {
-    pub(crate) fn atom(text: impl Into<String>) -> Self {
+    pub fn atom(text: impl Into<String>) -> Self {
         Self::Atom(Atom {
             text: text.into(),
             quoted: false,
         })
     }
 
-    pub(crate) fn string(text: impl Into<String>) -> Self {
+    pub fn string(text: impl Into<String>) -> Self {
         Self::Atom(Atom {
             text: text.into(),
             quoted: true,
         })
     }
 
-    pub(crate) fn list(items: impl Into<Vec<Sexp>>) -> Self {
+    pub fn list(items: impl Into<Vec<Sexp>>) -> Self {
         Self::List(items.into())
     }
 
-    pub(crate) fn as_atom(&self) -> Option<&str> {
+    pub fn as_atom(&self) -> Option<&str> {
         match self {
             Self::Atom(atom) => Some(&atom.text),
             Self::List(_) => None,
         }
     }
 
-    pub(crate) fn list_name(&self) -> Option<&str> {
+    pub fn list_name(&self) -> Option<&str> {
         match self {
             Self::List(items) => items.first().and_then(Self::as_atom),
             Self::Atom(_) => None,
@@ -61,7 +61,7 @@ impl fmt::Display for ParseError {
 
 impl error::Error for ParseError {}
 
-pub(crate) fn parse_one(input: &str) -> Result<Sexp, ParseError> {
+pub fn parse_one(input: &str) -> Result<Sexp, ParseError> {
     let mut parser = Parser { input, offset: 0 };
     parser.skip_ws_and_comments();
     let sexp = parser.parse_expr()?;
@@ -72,7 +72,7 @@ pub(crate) fn parse_one(input: &str) -> Result<Sexp, ParseError> {
     Ok(sexp)
 }
 
-pub(crate) fn render(sexp: &Sexp, indent: usize) -> String {
+pub fn render(sexp: &Sexp, indent: usize) -> String {
     let mut out = String::new();
     out.push_str(&" ".repeat(indent));
     render_into(sexp, indent, &mut out);
@@ -125,7 +125,10 @@ impl Parser<'_> {
                     Some('t') => text.push('\t'),
                     Some('"') => text.push('"'),
                     Some('\\') => text.push('\\'),
-                    Some(ch) => text.push(ch),
+                    Some(ch) => {
+                        text.push('\\');
+                        text.push(ch);
+                    }
                     None => return Err(self.error("unterminated string escape")),
                 },
                 Some(ch) => text.push(ch),
@@ -305,5 +308,17 @@ mod tests {
         let err = parse_one("(a) (b)").unwrap_err();
 
         assert!(err.to_string().contains("unexpected trailing input"));
+    }
+
+    #[test]
+    fn preserves_backslash_for_unknown_string_escapes() {
+        let sexp = parse_one(r#"(descr "path\foo")"#).unwrap();
+
+        assert_eq!(
+            sexp,
+            Sexp::list(vec![Sexp::atom("descr"), Sexp::string(r"path\foo")])
+        );
+        assert_eq!(render(&sexp, 0).trim(), r#"(descr "path\\foo")"#);
+        assert_eq!(parse_one(render(&sexp, 0).trim()).unwrap(), sexp);
     }
 }

@@ -850,6 +850,7 @@ dependencies = [
  "via-examples",
  "via-kicad",
  "via-kicad-footprints",
+ "via-kicad-sexp",
  "via-lceda-pro",
  "via-project",
 ]
@@ -891,6 +892,7 @@ version = "0.1.0"
 dependencies = [
  "via-core",
  "via-footprint",
+ "via-kicad-sexp",
 ]
 
 [[package]]
@@ -904,6 +906,10 @@ dependencies = [
  "ureq",
  "zstd",
 ]
+
+[[package]]
+name = "via-kicad-sexp"
+version = "0.1.0"
 
 [[package]]
 name = "via-lceda-pro"

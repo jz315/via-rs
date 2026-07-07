@@ -1,8 +1,8 @@
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 use via_core::{Design, FootprintPads, Result};
+use via_kicad_sexp::{self, Sexp};
 
 pub fn load_kicad_footprint(design: &mut Design, path: impl AsRef<Path>) -> Result<()> {
     design.add_footprint_pads(footprint_pads_from_kicad_mod(path)?);
@@ -30,87 +30,47 @@ pub fn footprint_pads_from_kicad_mod(path: impl AsRef<Path>) -> Result<Footprint
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_else(|| "unknown".to_owned());
 
-    Ok(footprint_pads_from_kicad_mod_text(name, &text).with_source(path.to_path_buf()))
+    Ok(footprint_pads_from_kicad_mod_text(name, &text)?.with_source(path.to_path_buf()))
 }
 
-pub fn footprint_pads_from_kicad_mod_text(name: impl Into<String>, text: &str) -> FootprintPads {
-    FootprintPads::new(name, parse_kicad_mod_pad_names(text))
+pub fn footprint_pads_from_kicad_mod_text(
+    name: impl Into<String>,
+    text: &str,
+) -> Result<FootprintPads> {
+    Ok(FootprintPads::new(name, parse_kicad_mod_pad_names(text)?))
 }
 
-pub fn parse_kicad_mod_pad_names(text: &str) -> BTreeSet<String> {
-    let mut pads = BTreeSet::new();
-    let bytes = text.as_bytes();
-    let mut index = 0;
-
-    while let Some(offset) = text[index..].find("(pad") {
-        index += offset + "(pad".len();
-        skip_ascii_whitespace(bytes, &mut index);
-
-        if index >= bytes.len() {
-            break;
-        }
-
-        let pad_name = if bytes[index] == b'"' {
-            parse_quoted_atom(bytes, &mut index)
-        } else {
-            parse_bare_atom(bytes, &mut index)
-        };
-
-        if let Some(pad_name) = pad_name
-            && !pad_name.is_empty()
-        {
-            pads.insert(pad_name);
-        }
+pub fn parse_kicad_mod_pad_names(text: &str) -> Result<std::collections::BTreeSet<String>> {
+    let source = via_kicad_sexp::parse_one(text).map_err(|err| {
+        via_core::Error::Io(format!(
+            "failed to parse KiCad footprint S-expression: {err}"
+        ))
+    })?;
+    let Sexp::List(items) = source else {
+        return Err(via_core::Error::Io(
+            "KiCad footprint does not contain a footprint node".to_owned(),
+        ));
+    };
+    if items.first().and_then(Sexp::as_atom) != Some("footprint") {
+        return Err(via_core::Error::Io(
+            "KiCad footprint does not start with a footprint node".to_owned(),
+        ));
     }
 
-    pads
+    Ok(items
+        .iter()
+        .filter(|item| item.list_name() == Some("pad"))
+        .filter_map(pad_name)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
-fn skip_ascii_whitespace(bytes: &[u8], index: &mut usize) {
-    while *index < bytes.len() && bytes[*index].is_ascii_whitespace() {
-        *index += 1;
-    }
-}
-
-fn parse_quoted_atom(bytes: &[u8], index: &mut usize) -> Option<String> {
-    if bytes.get(*index) != Some(&b'"') {
+fn pad_name(node: &Sexp) -> Option<&str> {
+    let Sexp::List(items) = node else {
         return None;
-    }
-    *index += 1;
-
-    let mut out = String::new();
-    while *index < bytes.len() {
-        let byte = bytes[*index];
-        *index += 1;
-
-        match byte {
-            b'\\' if *index < bytes.len() => {
-                out.push(bytes[*index] as char);
-                *index += 1;
-            }
-            b'"' => return Some(out),
-            _ => out.push(byte as char),
-        }
-    }
-
-    Some(out)
-}
-
-fn parse_bare_atom(bytes: &[u8], index: &mut usize) -> Option<String> {
-    let start = *index;
-    while *index < bytes.len() {
-        let byte = bytes[*index];
-        if byte.is_ascii_whitespace() || byte == b')' || byte == b'(' {
-            break;
-        }
-        *index += 1;
-    }
-
-    if *index == start {
-        None
-    } else {
-        Some(String::from_utf8_lossy(&bytes[start..*index]).into_owned())
-    }
+    };
+    items.get(1).and_then(Sexp::as_atom)
 }
 
 #[cfg(test)]
@@ -127,10 +87,35 @@ mod tests {
               (pad "GND 1" thru_hole circle (at 2 0))
             )
             "#,
-        );
+        )
+        .unwrap();
 
         assert!(pads.contains("1"));
         assert!(pads.contains("A2"));
         assert!(pads.contains("GND 1"));
+    }
+
+    #[test]
+    fn ignores_pad_text_in_comments_and_strings() {
+        let pads = parse_kicad_mod_pad_names(
+            r#"
+            (footprint "Demo"
+              ; (pad "COMMENT" smd rect (at 0 0))
+              (descr "not real: (pad \"STRING\" smd rect)")
+              (fp_text user "(pad FAKE)" (at 0 0) (layer "F.SilkS"))
+              (pad "1" thru_hole rect (at 0 0))
+            )
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(pads, std::collections::BTreeSet::from(["1".to_owned()]));
+    }
+
+    #[test]
+    fn rejects_non_footprint_text() {
+        let err = parse_kicad_mod_pad_names("(not_footprint)").unwrap_err();
+
+        assert!(format!("{err}").contains("does not start with a footprint node"));
     }
 }

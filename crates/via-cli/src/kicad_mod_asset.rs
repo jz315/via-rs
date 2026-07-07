@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use via_core::model::Part;
-
-use crate::kicad_sexp::{self, Sexp};
+use via_kicad_sexp::{self, Sexp};
 
 pub(crate) struct AssetFootprintRender<'a> {
     pub(crate) footprint_name: &'a str,
@@ -29,7 +28,7 @@ pub(crate) fn render(input: AssetFootprintRender<'_>) -> via_core::Result<String
         footprint_library_name,
     } = input;
 
-    let source = kicad_sexp::parse_one(kicad_mod).map_err(|err| {
+    let source = via_kicad_sexp::parse_one(kicad_mod).map_err(|err| {
         via_core::Error::Io(format!(
             "failed to parse KiCad footprint asset {footprint_name}: {err}"
         ))
@@ -42,6 +41,7 @@ pub(crate) fn render(input: AssetFootprintRender<'_>) -> via_core::Result<String
             )));
         }
     };
+    validate_asset_pads(footprint_name, module, &source_items)?;
 
     let mut children = vec![
         Sexp::atom("footprint"),
@@ -89,7 +89,7 @@ pub(crate) fn render(input: AssetFootprintRender<'_>) -> via_core::Result<String
                 Some("value") => rewrite_fp_text(&mut child, module.value(), true),
                 _ => {}
             },
-            "pad" => rewrite_pad(&mut child, module, net_ids, pad_nets),
+            "pad" => rewrite_pad(&mut child, module, net_ids, pad_nets)?,
             _ => {}
         }
 
@@ -132,7 +132,76 @@ pub(crate) fn render(input: AssetFootprintRender<'_>) -> via_core::Result<String
         ));
     }
 
-    Ok(kicad_sexp::render(&Sexp::list(children), 2))
+    Ok(via_kicad_sexp::render(&Sexp::list(children), 2))
+}
+
+fn validate_asset_pads(
+    footprint_name: &str,
+    module: &Part,
+    source_items: &[Sexp],
+) -> via_core::Result<()> {
+    let asset_pads = source_items
+        .iter()
+        .filter(|item| item.list_name() == Some("pad"))
+        .filter_map(asset_pad)
+        .collect::<Vec<_>>();
+    let asset_pad_names = asset_pads
+        .iter()
+        .map(|pad| pad.name.clone())
+        .collect::<BTreeSet<_>>();
+    let modeled_pads = module.modeled_pads();
+    let missing = module
+        .modeled_pads()
+        .into_iter()
+        .filter(|pad| !asset_pad_names.contains(pad))
+        .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        return Err(via_core::Error::Io(format!(
+            "{} references KiCad footprint asset {} but modeled pads are missing from the asset: {}",
+            module.refdes(),
+            footprint_name,
+            missing.join(", ")
+        )));
+    }
+
+    let unmodeled_electrical = asset_pads
+        .iter()
+        .filter(|pad| pad.is_electrical() && !modeled_pads.contains(&pad.name))
+        .map(|pad| pad.name.clone())
+        .collect::<Vec<_>>();
+    if !unmodeled_electrical.is_empty() {
+        return Err(via_core::Error::Io(format!(
+            "{} references KiCad footprint asset {} but the asset has electrical pads not covered by the model: {}",
+            module.refdes(),
+            footprint_name,
+            unmodeled_electrical.join(", ")
+        )));
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct AssetPad {
+    name: String,
+    kind: Option<String>,
+}
+
+impl AssetPad {
+    fn is_electrical(&self) -> bool {
+        !self.name.is_empty() && self.kind.as_deref() != Some("np_thru_hole")
+    }
+}
+
+fn asset_pad(node: &Sexp) -> Option<AssetPad> {
+    let Sexp::List(items) = node else {
+        return None;
+    };
+    Some(AssetPad {
+        name: items.get(1).and_then(Sexp::as_atom)?.to_owned(),
+        kind: items.get(2).and_then(Sexp::as_atom).map(str::to_owned),
+    })
 }
 
 fn is_skipped_footprint_header(head: &str) -> bool {
@@ -182,19 +251,25 @@ fn rewrite_pad(
     module: &Part,
     net_ids: &BTreeMap<String, usize>,
     pad_nets: &BTreeMap<(String, String), (String, String)>,
-) {
+) -> via_core::Result<()> {
     let Some(pad) = pad_name(node).map(str::to_owned) else {
-        return;
+        return Ok(());
     };
     let (net_name, pin_name) = pad_nets
         .get(&(module.refdes().to_owned(), pad))
         .cloned()
         .unwrap_or_else(|| (String::new(), String::new()));
-    let net = net_name
-        .is_empty()
-        .then_some(0)
-        .or_else(|| net_ids.get(&net_name).copied())
-        .unwrap_or(0);
+    let net = if net_name.is_empty() {
+        0
+    } else {
+        net_ids.get(&net_name).copied().ok_or_else(|| {
+            via_core::Error::Io(format!(
+                "{} pad net {} is missing from PCB net table",
+                module.refdes(),
+                net_name
+            ))
+        })?
+    };
 
     if net_name.is_empty() {
         remove_child_lists(node, "net");
@@ -211,6 +286,7 @@ fn rewrite_pad(
         set_child_list(node, "pinfunction", vec![Sexp::string(pin_name)]);
     }
     set_child_list(node, "pintype", vec![Sexp::string("passive")]);
+    Ok(())
 }
 
 fn pad_name(node: &Sexp) -> Option<&str> {
@@ -456,6 +532,99 @@ mod tests {
         assert!(rendered.contains("(net 7 \"NET(1)\""));
         assert!(rendered.contains("(pinfunction \"P(+)\""));
         assert_unique_uuids(&rendered);
+    }
+
+    #[test]
+    fn asset_renderer_rejects_modeled_pads_missing_from_source_asset() {
+        let kicad_mod = r#"(footprint "Fixture"
+  (version 20240101)
+  (generator "fixture")
+  (layer "F.Cu")
+  (pad "1" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers "*.Cu" "*.Mask"))
+)"#;
+        let part = Part::new("J1", "connector")
+            .pins(["A", "B"])
+            .map_pin("A", "1")
+            .map_pin("B", "2");
+
+        let err = render(AssetFootprintRender {
+            footprint_name: "Fixture",
+            kicad_mod,
+            module: &part,
+            x: 0.0,
+            y: 0.0,
+            rotation: 0.0,
+            net_ids: &BTreeMap::new(),
+            pad_nets: &BTreeMap::new(),
+            footprint_library_name: "FixtureLib",
+        })
+        .unwrap_err();
+
+        let message = format!("{err}");
+        assert!(message.contains("modeled pads are missing from the asset"));
+        assert!(message.contains("2"));
+    }
+
+    #[test]
+    fn asset_renderer_rejects_unmodeled_electrical_source_pads() {
+        let kicad_mod = r#"(footprint "Fixture"
+  (version 20240101)
+  (generator "fixture")
+  (layer "F.Cu")
+  (pad "1" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers "*.Cu" "*.Mask"))
+  (pad "SHIELD" smd rect (at 1 0) (size 1 1) (layers "F.Cu" "F.Mask"))
+)"#;
+        let part = Part::new("J1", "connector").pins(["A"]).map_pin("A", "1");
+
+        let err = render(AssetFootprintRender {
+            footprint_name: "Fixture",
+            kicad_mod,
+            module: &part,
+            x: 0.0,
+            y: 0.0,
+            rotation: 0.0,
+            net_ids: &BTreeMap::new(),
+            pad_nets: &BTreeMap::new(),
+            footprint_library_name: "FixtureLib",
+        })
+        .unwrap_err();
+
+        let message = format!("{err}");
+        assert!(message.contains("electrical pads not covered by the model"));
+        assert!(message.contains("SHIELD"));
+    }
+
+    #[test]
+    fn asset_renderer_allows_unmodeled_unnumbered_npth_pads() {
+        let kicad_mod = r#"(footprint "Fixture"
+  (version 20240101)
+  (generator "fixture")
+  (layer "F.Cu")
+  (pad "1" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers "*.Cu" "*.Mask"))
+  (pad "" np_thru_hole circle (at 2 0) (size 1 1) (drill 0.5) (layers "*.Cu" "*.Mask"))
+)"#;
+        let net_ids = BTreeMap::from([("NET".to_owned(), 1usize)]);
+        let pad_nets = BTreeMap::from([(
+            ("J1".to_owned(), "1".to_owned()),
+            ("NET".to_owned(), "A".to_owned()),
+        )]);
+        let part = Part::new("J1", "connector").pins(["A"]).map_pin("A", "1");
+
+        let rendered = render(AssetFootprintRender {
+            footprint_name: "Fixture",
+            kicad_mod,
+            module: &part,
+            x: 0.0,
+            y: 0.0,
+            rotation: 0.0,
+            net_ids: &net_ids,
+            pad_nets: &pad_nets,
+            footprint_library_name: "FixtureLib",
+        })
+        .unwrap();
+
+        assert!(rendered.contains("(pad \"\" np_thru_hole circle"));
+        assert!(rendered.contains("(net 1 \"NET\")"));
     }
 
     fn assert_unique_uuids(text: &str) {

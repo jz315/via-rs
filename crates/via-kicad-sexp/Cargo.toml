@@ -1,0 +1,11 @@
+[package]
+name = "via-kicad-sexp"
+version.workspace = true
+edition.workspace = true
+description = "Small KiCad S-expression parser and renderer for via."
+license.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[dependencies]
