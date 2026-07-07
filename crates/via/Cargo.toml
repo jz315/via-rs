@@ -1,5 +1,5 @@
 [package]
-name = "via-rs"
+name = "via-pcb"
 version.workspace = true
 edition.workspace = true
 description = "User-facing facade crate for the VIA Rust EDA library."

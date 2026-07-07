@@ -1,7 +1,7 @@
 # VIA Tutorial
 
 This tutorial explains the generic `via` API. It deliberately avoids any
-project-specific board, module, or measured connector. The point of `via-rs` is
+project-specific board, module, or measured connector. The point of `via-pcb` is
 to be a reusable library; real products should sit in downstream crates.
 
 ## 1. The Smallest Useful Board
@@ -281,7 +281,7 @@ my-board/
 ```
 
 That crate can define measured modules, exact footprint geometry, vendor
-metadata, and reusable circuit patterns. The generic `via-rs` workspace should
+metadata, and reusable circuit patterns. The generic `via-pcb` workspace should
 not need to know those names.
 
 That boundary is important. If a local module enters `via-footprint` too early,

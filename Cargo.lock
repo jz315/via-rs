@@ -841,7 +841,7 @@ name = "via-examples"
 version = "0.1.1"
 dependencies = [
  "via-core",
- "via-rs",
+ "via-pcb",
 ]
 
 [[package]]
@@ -901,17 +901,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "via-project"
-version = "0.1.1"
-dependencies = [
- "serde",
- "serde_json",
- "toml",
- "via-core",
-]
-
-[[package]]
-name = "via-rs"
+name = "via-pcb"
 version = "0.1.1"
 dependencies = [
  "via-core",
@@ -919,6 +909,16 @@ dependencies = [
  "via-footprint-ir",
  "via-parts",
  "via-project",
+]
+
+[[package]]
+name = "via-project"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
+ "via-core",
 ]
 
 [[package]]

@@ -29,15 +29,14 @@ LCEDA artifacts.
 
 ## Get Started
 
-Add `via-rs` to your Rust project:
+Add `via-pcb` to your Rust project:
 
 ```toml
 [dependencies]
-via = { package = "via-rs", version = "0.1.1" }
+via = { package = "via-pcb", version = "0.1.1" }
 ```
 
-The package is named `via-rs` on crates.io because `via` was already taken, but
-the Rust crate name is still `via`:
+The crates.io package is `via-pcb`, while the Rust crate name is still `via`:
 
 ```rust
 use via::prelude::*;
@@ -84,19 +83,19 @@ Use the Git repository directly:
 
 ```toml
 [dependencies]
-via = { package = "via-rs", git = "https://github.com/jz315/via-rs.git" }
+via = { package = "via-pcb", git = "https://github.com/jz315/via-rs.git" }
 ```
 
 For local development, use a path dependency:
 
 ```toml
 [dependencies]
-via = { package = "via-rs", path = "../via-rs/crates/via" }
+via = { package = "via-pcb", path = "../via-rs/crates/via" }
 ```
 
 ## Workspace
 
-- `via-rs`: user-facing package; its Rust crate name is `via` and it provides
+- `via-pcb`: user-facing package; its Rust crate name is `via` and it provides
   `via::prelude::*`.
 - `via-core`: boards, modules, pins, nets, footprints, rules, and diagnostics.
 - `via-parts`: generic reusable parts such as resistors and capacitors.
@@ -108,10 +107,6 @@ via = { package = "via-rs", path = "../via-rs/crates/via" }
 - `via-examples`: generic examples for tests and documentation snippets.
 - `via-rs-cli` (`crates/via-cli`): project-oriented command-line wrapper for
   checks, snapshots, BOMs, and export. It installs the `via` binary.
-
-Project-specific crates are intentionally outside this workspace. A downstream
-application may provide its own `via-parts-*` and `via-patterns-*` crates, but
-the generic `via` crate should remain reusable without them.
 
 ## Minimal Example
 
@@ -271,7 +266,7 @@ via export lceda-pro <design-name> --out <lceda-package>
 via export pcb <design-name> --layout <layout-json> --out <kicad-pcb> # experimental
 ```
 
-## Developing via-rs
+## Contribution
 
 ```powershell
 git clone https://github.com/jz315/via-rs.git
@@ -280,27 +275,10 @@ cargo fmt --check
 cargo test --workspace
 ```
 
-## Scope
-
-In scope:
-
-- Typed circuit authoring in Rust.
-- Pin-to-pad validation.
-- Generic footprint generation.
-- KiCad and LCEDA draft export.
-- JSON snapshots for editor integrations.
-- CI-friendly diagnostics.
-
-Out of scope for the generic library:
-
-- Product-specific module libraries.
-- Autorouting.
-- Gerber generation.
-- Fabrication-ready claims without KiCad DRC and human footprint review.
 
 ## License
 
-`via-rs` is licensed under the Mozilla Public License 2.0.
+`via-pcb` is licensed under the Mozilla Public License 2.0.
 
 Official KiCad footprint assets imported or fetched through
 `via-kicad-footprints` remain under
