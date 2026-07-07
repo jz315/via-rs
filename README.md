@@ -19,10 +19,6 @@
 as normal Rust data, validate pin maps and nets, and export reviewable KiCad /
 LCEDA artifacts.
 
-The generic workspace must stay project-neutral. Real products and local module
-libraries should live in separate crates that depend on `via`; they should not
-be re-exported by the `via` facade or embedded in generic footprint packs.
-
 ## Why via
 
 - Reusable board modules instead of copy-pasted schematic fragments.
@@ -33,24 +29,57 @@ be re-exported by the `via` facade or embedded in generic footprint packs.
 
 ## Get Started
 
-`via` is currently used from source or as a Rust dependency. The facade package
-is prepared for crates.io as `via-rs`, while the Rust crate name stays `via`.
+Add `via-rs` to your Rust project:
 
-Clone the workspace and run the tests:
-
-```powershell
-git clone https://github.com/jz315/via-rs.git
-cd via-rs
-cargo test --workspace
+```toml
+[dependencies]
+via = { package = "via-rs", version = "0.1.0" }
 ```
 
-Run the CLI from source:
+The package is named `via-rs` on crates.io because `via` was already taken, but
+the Rust crate name is still `via`:
 
-```powershell
-cargo run -p via-cli -- --help
+```rust
+use via::prelude::*;
+
+pub fn board() -> Result<Board> {
+    let mut d = Design::new("demo")
+        .rules(Rules::new())
+        .units(Unit::Mm);
+
+    let signal = d.signal("SIGNAL", "3V3");
+    let v3v3 = d.rail("3V3").dc(3.3);
+    let ground = d.ground("GND");
+
+    let j1 = d.add(
+        part("J1", "3-pin header")
+            .footprint(fp::pin_1x03())
+            .symbol(sym::connector().left(["SIG", "3V3", "GND"]))
+            .pin(pin("SIG").logic("3V3").pad("1"))
+            .pin(pin("3V3").power("3V3").pad("2"))
+            .pin(pin("GND").ground().pad("3")),
+    )?;
+
+    d.connect(&signal, [j1.pin("SIG")]);
+    d.connect(&v3v3, [j1.pin("3V3")]);
+    d.connect(&ground, [j1.pin("GND")]);
+
+    d.check(CheckProfile::Prototype)?;
+    d.finish()
+}
 ```
 
-## Use In A Rust Project
+For exporter workflows, define a `via.toml` project and run the CLI from this
+workspace for now:
+
+```powershell
+cargo run -p via-cli -- check <design-name>
+cargo run -p via-cli -- export kicad <design-name>
+```
+
+`via-cli` is not published yet. The library crates are available on crates.io.
+
+## Alternative Dependency Sources
 
 Use the Git repository directly:
 
@@ -64,13 +93,6 @@ For local development, use a path dependency:
 ```toml
 [dependencies]
 via = { package = "via-rs", path = "../via-rs/crates/via" }
-```
-
-After the crates.io release is published:
-
-```toml
-[dependencies]
-via = { package = "via-rs", version = "0.1.0" }
 ```
 
 ## Workspace
@@ -247,9 +269,11 @@ cargo run -p via-cli -- export kicad <design-name>
 cargo run -p via-cli -- export lceda <design-name> --out <lceda-package>
 ```
 
-## Tests
+## Developing via-rs
 
 ```powershell
+git clone https://github.com/jz315/via-rs.git
+cd via-rs
 cargo fmt --check
 cargo test --workspace
 ```
