@@ -73,8 +73,10 @@ For exporter workflows, install the CLI package. The package name is
 
 ```powershell
 cargo install via-pcb-cli
-via check <design-name>
-via export kicad <design-name>
+via init my-board
+cd my-board
+via check
+via export kicad
 ```
 
 ## Alternative Dependency Sources
@@ -253,6 +255,7 @@ Project commands:
 
 ```powershell
 cargo install via-pcb-cli
+via init <project-dir>
 via ir <design-name> --out <board-ir-json>
 via check <design-name>
 via check <design-name> --production

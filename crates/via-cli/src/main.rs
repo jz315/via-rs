@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
+mod init;
 mod json;
 mod kicad_export;
 mod kicad_mod_asset;
@@ -119,6 +120,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    #[command(about = "Create a new via PCB project scaffold")]
+    Init(init::InitArgs),
     #[command(about = "Emit Board IR JSON for a design")]
     Ir(IrArgs),
     #[command(about = "Validate a design")]
@@ -334,6 +337,7 @@ fn main() -> via_core::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Some(Command::Init(args)) => init::run(args),
         Some(Command::Ir(args)) => ir_command(cli.project, args),
         Some(Command::Check(args)) => check_command(cli.project, args),
         Some(Command::Snapshot(args)) => snapshot_command(cli.project, args),
@@ -706,7 +710,7 @@ mod cli_tests {
     fn top_level_help_lists_current_commands() {
         let help = help_for(Cli::command());
 
-        for command in ["ir", "check", "snapshot", "export", "footprints"] {
+        for command in ["init", "ir", "check", "snapshot", "export", "footprints"] {
             assert!(
                 help.contains(command),
                 "expected top-level help to contain {command:?}:\n{help}"

@@ -246,6 +246,7 @@ Then run the project workflow:
 
 ```powershell
 cargo install via-pcb-cli
+via init <project-dir>
 via ir <design-name> --out <board-ir-json>
 via check <design-name>
 via check <design-name> --production

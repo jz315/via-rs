@@ -1,6 +1,6 @@
 [package]
 name = "via-pcb-cli"
-version.workspace = true
+version = "0.1.2"
 edition.workspace = true
 description = "Project-oriented CLI wrapper for via checks, snapshots, BOMs, and exports."
 repository.workspace = true
