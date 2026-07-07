@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Deserialize;
@@ -119,6 +119,7 @@ fn render_kicad_pcb(
     official_footprints: &BTreeMap<String, String>,
 ) -> via_core::Result<String> {
     let net_ids = net_ids(board);
+    validate_layout(board, layout, &net_ids)?;
     let pad_nets = pad_net_map(board);
     let mut out = String::new();
     out.push_str("(kicad_pcb\n");
@@ -151,9 +152,12 @@ fn render_kicad_pcb(
         if placement.status.as_deref() == Some("missing") {
             continue;
         }
-        let Some(module) = board.module(&placement.refdes) else {
-            continue;
-        };
+        let module = board.module(&placement.refdes).ok_or_else(|| {
+            via_core::Error::Io(format!(
+                "PCB layout references unknown module {}",
+                placement.refdes
+            ))
+        })?;
         out.push_str(&render_footprint(
             module,
             placement,
@@ -184,7 +188,7 @@ fn render_kicad_pcb(
     }
 
     for segment in &layout.copper.segments {
-        let net = net_ids.get(&segment.net).copied().unwrap_or(0);
+        let net = layout_net_id(&net_ids, &segment.net, "segment", &segment.id)?;
         out.push_str(&format!(
             "  (segment (start {} {}) (end {} {}) (width {}) (layer \"{}\") (net {net}) (uuid \"{}\"))\n",
             n(segment.a.x),
@@ -197,7 +201,7 @@ fn render_kicad_pcb(
         ));
     }
     for via in &layout.copper.vias {
-        let net = net_ids.get(&via.net).copied().unwrap_or(0);
+        let net = layout_net_id(&net_ids, &via.net, "via", &via.id)?;
         out.push_str(&format!(
             "  (via (at {} {}) (size {}) (drill {}) (layers \"F.Cu\" \"B.Cu\") (net {net}) (uuid \"{}\"))\n",
             n(via.x),
@@ -210,6 +214,78 @@ fn render_kicad_pcb(
 
     out.push_str(")\n");
     Ok(out)
+}
+
+fn validate_layout(
+    board: &Board,
+    layout: &Layout,
+    net_ids: &BTreeMap<String, usize>,
+) -> via_core::Result<()> {
+    if layout.board != board.name() {
+        return Err(via_core::Error::Io(format!(
+            "PCB layout board {} does not match design board {}",
+            layout.board,
+            board.name()
+        )));
+    }
+
+    let board_refs = board
+        .modules()
+        .map(|module| module.refdes().to_owned())
+        .collect::<BTreeSet<_>>();
+    let mut layout_refs = BTreeSet::new();
+    let mut covered_refs = BTreeSet::new();
+
+    for placement in &layout.modules {
+        if !board_refs.contains(&placement.refdes) {
+            return Err(via_core::Error::Io(format!(
+                "PCB layout references unknown module {}",
+                placement.refdes
+            )));
+        }
+        if !layout_refs.insert(placement.refdes.clone()) {
+            return Err(via_core::Error::Io(format!(
+                "PCB layout places module {} more than once",
+                placement.refdes
+            )));
+        }
+        covered_refs.insert(placement.refdes.clone());
+    }
+
+    let missing = board
+        .modules()
+        .filter(|module| module.footprint_name().is_some())
+        .map(|module| module.refdes().to_owned())
+        .filter(|refdes| !covered_refs.contains(refdes))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(via_core::Error::Io(format!(
+            "PCB layout is missing placement entries for modules: {}",
+            missing.join(", ")
+        )));
+    }
+
+    for segment in &layout.copper.segments {
+        layout_net_id(net_ids, &segment.net, "segment", &segment.id)?;
+    }
+    for via in &layout.copper.vias {
+        layout_net_id(net_ids, &via.net, "via", &via.id)?;
+    }
+
+    Ok(())
+}
+
+fn layout_net_id(
+    net_ids: &BTreeMap<String, usize>,
+    net: &str,
+    item_kind: &str,
+    item_id: &str,
+) -> via_core::Result<usize> {
+    net_ids.get(net).copied().ok_or_else(|| {
+        via_core::Error::Io(format!(
+            "PCB layout {item_kind} {item_id} references unknown net {net}"
+        ))
+    })
 }
 
 fn render_setup(board: &Board) -> String {
@@ -787,6 +863,187 @@ mod tests {
         let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
 
         assert!(format!("{err}").contains("no generated footprint IR or loaded KiCad asset"));
+    }
+
+    #[test]
+    fn pcb_export_rejects_unknown_layout_module() {
+        let board = Design::new("unknown_module").build().unwrap();
+        let layout = Layout {
+            board: "unknown_module".to_owned(),
+            modules: vec![LayoutModule {
+                refdes: "J404".to_owned(),
+                x: 0.0,
+                y: 0.0,
+                rotation: 0.0,
+                status: None,
+            }],
+            outline: None,
+            copper: LayoutCopper::default(),
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("unknown module J404"));
+    }
+
+    #[test]
+    fn pcb_export_rejects_layout_board_mismatch() {
+        let board = Design::new("current_board").build().unwrap();
+        let layout = Layout {
+            board: "stale_board".to_owned(),
+            modules: Vec::new(),
+            outline: None,
+            copper: LayoutCopper::default(),
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("layout board stale_board"));
+    }
+
+    #[test]
+    fn pcb_export_rejects_unplaced_board_module() {
+        let mut design = Design::new("unplaced");
+        design
+            .add(
+                via_core::part("J1", "external")
+                    .footprint("External_Footprint")
+                    .pin(via_core::pin("1").passive().pad("1")),
+            )
+            .unwrap();
+        let board = design.build().unwrap();
+        let layout = Layout {
+            board: "unplaced".to_owned(),
+            modules: Vec::new(),
+            outline: None,
+            copper: LayoutCopper::default(),
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("missing placement entries for modules: J1"));
+    }
+
+    #[test]
+    fn pcb_export_allows_explicitly_missing_board_module() {
+        let mut design = Design::new("explicit_missing");
+        design
+            .add(
+                via_core::part("J1", "external")
+                    .footprint("External_Footprint")
+                    .pin(via_core::pin("1").passive().pad("1")),
+            )
+            .unwrap();
+        let board = design.build().unwrap();
+        let layout = Layout {
+            board: "explicit_missing".to_owned(),
+            modules: vec![LayoutModule {
+                refdes: "J1".to_owned(),
+                x: 0.0,
+                y: 0.0,
+                rotation: 0.0,
+                status: Some("missing".to_owned()),
+            }],
+            outline: None,
+            copper: LayoutCopper::default(),
+            tracks: Vec::new(),
+        };
+
+        render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap();
+    }
+
+    #[test]
+    fn pcb_export_rejects_duplicate_layout_module() {
+        let mut design = Design::new("duplicate");
+        design
+            .add(
+                via_core::part("J1", "external")
+                    .footprint("External_Footprint")
+                    .pin(via_core::pin("1").passive().pad("1")),
+            )
+            .unwrap();
+        let board = design.build().unwrap();
+        let layout = Layout {
+            board: "duplicate".to_owned(),
+            modules: vec![
+                LayoutModule {
+                    refdes: "J1".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    rotation: 0.0,
+                    status: Some("missing".to_owned()),
+                },
+                LayoutModule {
+                    refdes: "J1".to_owned(),
+                    x: 10.0,
+                    y: 0.0,
+                    rotation: 0.0,
+                    status: Some("missing".to_owned()),
+                },
+            ],
+            outline: None,
+            copper: LayoutCopper::default(),
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("places module J1 more than once"));
+    }
+
+    #[test]
+    fn pcb_export_rejects_unknown_copper_nets() {
+        let board = Design::new("bad_copper").build().unwrap();
+        let layout = Layout {
+            board: "bad_copper".to_owned(),
+            modules: Vec::new(),
+            outline: None,
+            copper: LayoutCopper {
+                segments: vec![LayoutSegment {
+                    id: "seg-bad".to_owned(),
+                    net: "TYPO_NET".to_owned(),
+                    layer: "F.Cu".to_owned(),
+                    width: 0.25,
+                    a: Point { x: 0.0, y: 0.0 },
+                    b: Point { x: 1.0, y: 0.0 },
+                }],
+                vias: Vec::new(),
+            },
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("segment seg-bad references unknown net TYPO_NET"));
+    }
+
+    #[test]
+    fn pcb_export_rejects_unknown_via_nets() {
+        let board = Design::new("bad_via").build().unwrap();
+        let layout = Layout {
+            board: "bad_via".to_owned(),
+            modules: Vec::new(),
+            outline: None,
+            copper: LayoutCopper {
+                segments: Vec::new(),
+                vias: vec![LayoutVia {
+                    id: "via-bad".to_owned(),
+                    net: "TYPO_NET".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    drill: 0.4,
+                    diameter: 0.8,
+                }],
+            },
+            tracks: Vec::new(),
+        };
+
+        let err = render_kicad_pcb(&board, &layout, "FixtureLib", &BTreeMap::new()).unwrap_err();
+
+        assert!(format!("{err}").contains("via via-bad references unknown net TYPO_NET"));
     }
 
     fn assert_unique_uuids(text: &str) {

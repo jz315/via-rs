@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+const MANAGED_FOOTPRINTS_FILE: &str = ".via-managed-footprints";
+
 pub(crate) struct KicadExportSummary {
     pub(crate) generated_footprints: usize,
     pub(crate) manual_footprints: usize,
@@ -163,25 +165,62 @@ fn prune_stale_footprints(
     pretty_dir: &Path,
     expected: &BTreeSet<String>,
 ) -> via_core::Result<usize> {
+    let expected_files = managed_footprint_file_names(expected)?;
+    let manifest_path = pretty_dir.join(MANAGED_FOOTPRINTS_FILE);
+    let previous_files = read_managed_footprints(&manifest_path)?;
     let mut removed = 0usize;
-    for entry in
-        std::fs::read_dir(pretty_dir).map_err(|err| via_core::Error::Io(err.to_string()))?
-    {
-        let entry = entry.map_err(|err| via_core::Error::Io(err.to_string()))?;
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("kicad_mod") {
-            continue;
-        }
-        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            continue;
-        };
-        if expected.contains(name) {
+
+    for file_name in previous_files.difference(&expected_files) {
+        let path = pretty_dir.join(file_name);
+        if !path.is_file() {
             continue;
         }
         std::fs::remove_file(&path).map_err(|err| via_core::Error::Io(err.to_string()))?;
         removed += 1;
     }
+
+    write_managed_footprints(&manifest_path, &expected_files)?;
     Ok(removed)
+}
+
+fn managed_footprint_file_names(expected: &BTreeSet<String>) -> via_core::Result<BTreeSet<String>> {
+    expected
+        .iter()
+        .map(|name| {
+            via_kicad_footprints::footprint_file_name(name)
+                .map_err(|err| via_core::Error::Io(err.to_string()))
+        })
+        .collect()
+}
+
+fn read_managed_footprints(path: &Path) -> via_core::Result<BTreeSet<String>> {
+    if !path.exists() {
+        return Ok(BTreeSet::new());
+    }
+    let text = std::fs::read_to_string(path).map_err(|err| via_core::Error::Io(err.to_string()))?;
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .filter(|line| is_safe_managed_footprint_file(line))
+        .map(str::to_owned)
+        .collect())
+}
+
+fn write_managed_footprints(path: &Path, files: &BTreeSet<String>) -> via_core::Result<()> {
+    let mut text = String::new();
+    for file in files {
+        text.push_str(file);
+        text.push('\n');
+    }
+    std::fs::write(path, text).map_err(|err| via_core::Error::Io(err.to_string()))
+}
+
+fn is_safe_managed_footprint_file(file: &str) -> bool {
+    let path = Path::new(file);
+    !file.is_empty()
+        && path.components().count() == 1
+        && path.file_name().and_then(|name| name.to_str()) == Some(file)
+        && path.extension().and_then(|ext| ext.to_str()) == Some("kicad_mod")
 }
 
 #[cfg(test)]
@@ -231,14 +270,20 @@ mod tests {
     }
 
     #[test]
-    fn stale_local_footprint_files_are_pruned() {
+    fn stale_local_footprint_files_are_pruned_only_when_previously_managed() {
         let root =
             std::env::temp_dir().join(format!("via_kicad_export_prune_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("Keep.kicad_mod"), "").unwrap();
         std::fs::write(root.join("Stale.kicad_mod"), "").unwrap();
+        std::fs::write(root.join("Shared.kicad_mod"), "").unwrap();
         std::fs::write(root.join("notes.txt"), "").unwrap();
+        std::fs::write(
+            root.join(MANAGED_FOOTPRINTS_FILE),
+            "Keep.kicad_mod\nStale.kicad_mod\n..\\Unsafe.kicad_mod\n",
+        )
+        .unwrap();
         let expected = BTreeSet::from(["Keep".to_owned()]);
 
         let removed = prune_stale_footprints(&root, &expected).unwrap();
@@ -246,7 +291,36 @@ mod tests {
         assert_eq!(removed, 1);
         assert!(root.join("Keep.kicad_mod").exists());
         assert!(!root.join("Stale.kicad_mod").exists());
+        assert!(root.join("Shared.kicad_mod").exists());
         assert!(root.join("notes.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join(MANAGED_FOOTPRINTS_FILE)).unwrap(),
+            "Keep.kicad_mod\n"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn first_footprint_export_records_manifest_without_deleting_shared_files() {
+        let root = std::env::temp_dir().join(format!(
+            "via_kicad_export_first_prune_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Keep.kicad_mod"), "").unwrap();
+        std::fs::write(root.join("Shared.kicad_mod"), "").unwrap();
+        let expected = BTreeSet::from(["Keep".to_owned()]);
+
+        let removed = prune_stale_footprints(&root, &expected).unwrap();
+
+        assert_eq!(removed, 0);
+        assert!(root.join("Keep.kicad_mod").exists());
+        assert!(root.join("Shared.kicad_mod").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join(MANAGED_FOOTPRINTS_FILE)).unwrap(),
+            "Keep.kicad_mod\n"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

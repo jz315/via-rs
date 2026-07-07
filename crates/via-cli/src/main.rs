@@ -5,7 +5,6 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 mod json;
 mod kicad_export;
 mod kicad_mod_asset;
-mod kicad_sexp;
 mod pcb_export;
 mod report;
 
@@ -476,13 +475,6 @@ fn export_pcb_command(project_path: Option<PathBuf>, args: ExportPcbArgs) -> via
         kicad_export::load_required_official_footprint_texts(&board, &footprint_cache_version)?;
     let loaded = board.footprints().count();
     let layout_model = pcb_export::read_layout(&layout)?;
-    if layout_model.board != board.name() {
-        eprintln!(
-            "warning: layout board {} does not match design board {}",
-            layout_model.board,
-            board.name()
-        );
-    }
     pcb_export::write_kicad_pcb(
         &board,
         &layout_model,
