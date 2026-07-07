@@ -1,4 +1,19 @@
+<p align="center">
+  <img src="assets/via-logo.svg" alt="via" width="520">
+</p>
+
+<p align="center">
+  <a href="Cargo.toml"><img alt="version" src="https://img.shields.io/badge/version-0.1.0-f05a28?style=for-the-badge"></a>
+  <a href="Cargo.toml"><img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-4b4f56?style=for-the-badge&logo=rust&logoColor=white"></a>
+  <a href="README.md#cli"><img alt="KiCad export" src="https://img.shields.io/badge/KiCad-export-314cb6?style=for-the-badge"></a>
+  <a href="README.md#cli"><img alt="LCEDA Pro export" src="https://img.shields.io/badge/LCEDA%20Pro-export-00a3a3?style=for-the-badge"></a>
+  <a href="TUTORIAL.md"><img alt="Tutorial" src="https://img.shields.io/badge/docs-tutorial-0a7f42?style=for-the-badge"></a>
+  <a href="Cargo.toml"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6a35ff?style=for-the-badge"></a>
+</p>
+
 # via
+
+## Design circuit boards with Rust
 
 `via` is a Rust-native circuit authoring toolkit. It lets you describe a board
 as normal Rust data, validate pin maps and nets, and export reviewable KiCad /
@@ -8,9 +23,60 @@ The generic workspace must stay project-neutral. Real products and local module
 libraries should live in separate crates that depend on `via`; they should not
 be re-exported by the `via` facade or embedded in generic footprint packs.
 
+## Why via
+
+- Reusable board modules instead of copy-pasted schematic fragments.
+- Typed nets, rails, pins, footprints, and electrical classes.
+- Validation before export, including pin maps, pad bindings, and connectivity.
+- KiCad and LCEDA Pro export paths for review, hand layout, and iteration.
+- Rust tests for hardware design assumptions.
+
+## Get Started
+
+`via` is currently used from source or as a Rust dependency. The facade package
+is prepared for crates.io as `via-rs`, while the Rust crate name stays `via`.
+
+Clone the workspace and run the tests:
+
+```powershell
+git clone https://github.com/jz315/via-rs.git
+cd via-rs
+cargo test --workspace
+```
+
+Run the CLI from source:
+
+```powershell
+cargo run -p via-cli -- --help
+```
+
+## Use In A Rust Project
+
+Use the Git repository directly:
+
+```toml
+[dependencies]
+via = { package = "via-rs", git = "https://github.com/jz315/via-rs.git" }
+```
+
+For local development, use a path dependency:
+
+```toml
+[dependencies]
+via = { package = "via-rs", path = "../via-rs/crates/via" }
+```
+
+After the crates.io release is published:
+
+```toml
+[dependencies]
+via = { package = "via-rs", version = "0.1.0" }
+```
+
 ## Workspace
 
-- `via`: user-facing facade crate and `via::prelude::*`.
+- `via-rs`: user-facing package; its Rust crate name is `via` and it provides
+  `via::prelude::*`.
 - `via-core`: boards, modules, pins, nets, footprints, rules, and diagnostics.
 - `via-parts`: generic reusable parts such as resistors and capacitors.
 - `via-footprint`: high-level generated footprint builders.
