@@ -829,24 +829,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "via-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
- "via-core",
- "via-examples",
- "via-kicad",
- "via-kicad-footprints",
- "via-kicad-sexp",
- "via-lceda-pro",
- "via-project",
-]
-
-[[package]]
 name = "via-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "via-footprint-ir",
@@ -854,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "via-examples"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "via-core",
  "via-rs",
@@ -862,7 +846,7 @@ dependencies = [
 
 [[package]]
 name = "via-footprint"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "via-core",
  "via-footprint-ir",
@@ -870,14 +854,14 @@ dependencies = [
 
 [[package]]
 name = "via-footprint-ir"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "via-kicad"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "via-core",
  "via-footprint",
@@ -886,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "via-kicad-footprints"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -898,11 +882,11 @@ dependencies = [
 
 [[package]]
 name = "via-kicad-sexp"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "via-lceda-pro"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "via-core",
  "via-footprint-ir",
@@ -910,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "via-parts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "via-core",
  "via-footprint",
@@ -918,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "via-project"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -928,12 +912,28 @@ dependencies = [
 
 [[package]]
 name = "via-rs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "via-core",
  "via-footprint",
  "via-footprint-ir",
  "via-parts",
+ "via-project",
+]
+
+[[package]]
+name = "via-rs-cli"
+version = "0.1.1"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "via-core",
+ "via-footprint-ir",
+ "via-kicad",
+ "via-kicad-footprints",
+ "via-kicad-sexp",
+ "via-lceda-pro",
  "via-project",
 ]
 

@@ -12,4 +12,4 @@ keywords.workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-via-footprint-ir = { version = "=0.1.0", path = "../via-footprint-ir" }
+via-footprint-ir = { version = "=0.1.1", path = "../via-footprint-ir" }

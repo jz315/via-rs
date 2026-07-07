@@ -11,5 +11,5 @@ categories.workspace = true
 keywords.workspace = true
 
 [dependencies]
-via-core = { version = "=0.1.0", path = "../via-core" }
-via-footprint = { version = "=0.1.0", path = "../via-footprint" }
+via-core = { version = "=0.1.1", path = "../via-core" }
+via-footprint = { version = "=0.1.1", path = "../via-footprint" }

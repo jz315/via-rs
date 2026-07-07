@@ -301,7 +301,7 @@ impl Project {
                     .map(|out| out.file.clone())
             })
             .ok_or_else(|| {
-                Error::Io("export lceda requires --out or [outputs.lceda].file".to_owned())
+                Error::Io("export lceda-pro requires --out or [outputs.lceda].file".to_owned())
             })?;
         Ok(self.resolve_path(path))
     }

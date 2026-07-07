@@ -12,5 +12,5 @@ keywords.workspace = true
 publish = false
 
 [dependencies]
-via = { package = "via-rs", version = "=0.1.0", path = "../via" }
-via-core = { version = "=0.1.0", path = "../via-core" }
+via = { package = "via-rs", version = "=0.1.1", path = "../via" }
+via-core = { version = "=0.1.1", path = "../via-core" }

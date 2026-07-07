@@ -599,7 +599,7 @@ mod tests {
 
     #[test]
     fn renders_debug_io_demo_snapshot_contract() {
-        let board = via_examples::debug_io_demo::debug_io_demo_board().unwrap();
+        let board = crate::test_fixtures::debug_io_board().unwrap();
         let json = board_snapshot(&board, board.footprints().count(), &[], &[]);
 
         assert!(json.contains("\"version\": 3"));

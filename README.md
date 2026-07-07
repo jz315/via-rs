@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="Cargo.toml"><img alt="version" src="https://img.shields.io/badge/version-0.1.0-f05a28?style=for-the-badge"></a>
+  <a href="Cargo.toml"><img alt="version" src="https://img.shields.io/badge/version-0.1.1-f05a28?style=for-the-badge"></a>
   <a href="Cargo.toml"><img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-4b4f56?style=for-the-badge&logo=rust&logoColor=white"></a>
   <a href="README.md#cli"><img alt="KiCad export" src="https://img.shields.io/badge/KiCad-export-314cb6?style=for-the-badge"></a>
   <a href="README.md#cli"><img alt="LCEDA Pro export" src="https://img.shields.io/badge/LCEDA%20Pro-export-00a3a3?style=for-the-badge"></a>
@@ -33,7 +33,7 @@ Add `via-rs` to your Rust project:
 
 ```toml
 [dependencies]
-via = { package = "via-rs", version = "0.1.0" }
+via = { package = "via-rs", version = "0.1.1" }
 ```
 
 The package is named `via-rs` on crates.io because `via` was already taken, but
@@ -69,15 +69,14 @@ pub fn board() -> Result<Board> {
 }
 ```
 
-For exporter workflows, define a `via.toml` project and run the CLI from this
-workspace for now:
+For exporter workflows, install the CLI package. The package name is
+`via-rs-cli`, and the installed command is `via`:
 
 ```powershell
-cargo run -p via-cli -- check <design-name>
-cargo run -p via-cli -- export kicad <design-name>
+cargo install via-rs-cli
+via check <design-name>
+via export kicad <design-name>
 ```
-
-`via-cli` is not published yet. The library crates are available on crates.io.
 
 ## Alternative Dependency Sources
 
@@ -107,8 +106,8 @@ via = { package = "via-rs", path = "../via-rs/crates/via" }
 - `via-lceda-pro`: LCEDA Pro package export.
 - `via-project`: `via.toml` project loading and external design providers.
 - `via-examples`: generic examples for tests and documentation snippets.
-- `via-cli`: project-oriented command-line wrapper for checks, snapshots,
-  BOMs, and export.
+- `via-rs-cli` (`crates/via-cli`): project-oriented command-line wrapper for
+  checks, snapshots, BOMs, and export. It installs the `via` binary.
 
 Project-specific crates are intentionally outside this workspace. A downstream
 application may provide its own `via-parts-*` and `via-patterns-*` crates, but
@@ -258,15 +257,18 @@ fn main() -> Result<()> {
 Project commands:
 
 ```powershell
-cargo run -p via-cli -- build --out <board-ir-json>
-cargo run -p via-cli -- check <design-name>
-cargo run -p via-cli -- check-production <design-name>
-cargo run -p via-cli -- inspect <design-name> --out <snapshot-json>
-cargo run -p via-cli -- bom <design-name> --format csv --out <bom-csv>
-cargo run -p via-cli -- footprints status
-cargo run -p via-cli -- footprints import --version 10.0.4 --from "<KiCad footprints dir>"
-cargo run -p via-cli -- export kicad <design-name>
-cargo run -p via-cli -- export lceda <design-name> --out <lceda-package>
+cargo install via-rs-cli
+via ir <design-name> --out <board-ir-json>
+via check <design-name>
+via check <design-name> --production
+via snapshot <design-name> --out <snapshot-json>
+via bom <design-name> --format csv --out <bom-csv>
+via footprints status
+via footprints import --version 10.0.4 --from "<KiCad footprints dir>"
+via footprints fetch --url "<cache-bundle-url>" # experimental
+via export kicad <design-name>
+via export lceda-pro <design-name> --out <lceda-package>
+via export pcb <design-name> --layout <layout-json> --out <kicad-pcb> # experimental
 ```
 
 ## Developing via-rs

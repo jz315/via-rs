@@ -245,12 +245,13 @@ fn main() -> Result<()> {
 Then run the project workflow:
 
 ```powershell
-cargo run -p via-cli -- build --out <board-ir-json>
-cargo run -p via-cli -- check <design-name>
-cargo run -p via-cli -- check-production <design-name>
-cargo run -p via-cli -- inspect <design-name> --out <snapshot-json>
-cargo run -p via-cli -- bom <design-name> --format csv --out <bom-csv>
-cargo run -p via-cli -- export kicad
+cargo install via-rs-cli
+via ir <design-name> --out <board-ir-json>
+via check <design-name>
+via check <design-name> --production
+via snapshot <design-name> --out <snapshot-json>
+via bom <design-name> --format csv --out <bom-csv>
+via export kicad <design-name>
 ```
 
 The intended loop is:

@@ -8,14 +8,109 @@ mod kicad_mod_asset;
 mod pcb_export;
 mod report;
 
+#[cfg(test)]
+mod test_fixtures {
+    use via_core::{Board, FootprintPads, part, pin};
+    use via_footprint_ir::{FootprintIr, Pad, PadShape, Point, Size};
+
+    pub fn debug_io_board() -> via_core::Result<Board> {
+        let mut design = via_core::Design::new("debug_io_demo");
+        let vin = design.power_domain("5V_IN", "5V");
+        let v3v3 = design.power_domain("3V3", "3V3");
+        let ground = design.ground("GND");
+        let i2c_scl = design.logic("I2C_SCL", "3V3");
+        let led_status = design.logic("LED_STATUS", "3V3");
+
+        let regulator = design.add(
+            part("U1", "fixture regulator")
+                .footprint(smd_footprint("SOT-223", &["1", "2", "3", "4"]))
+                .pin(pin("VIN").power("5V").pad("1"))
+                .pin(pin("GND").ground().pad("2"))
+                .pin(pin("VOUT").power("3V3").pad("3"))
+                .pin(pin("TAB").power("3V3").pad("4")),
+        )?;
+
+        let bus = design.add(
+            part("U2", "fixture TSSOP-20 device")
+                .footprint(smd_footprint(
+                    "TSSOP-20",
+                    &[
+                        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                        "15", "16", "17", "18", "19", "20",
+                    ],
+                ))
+                .pin_specs((1..=20).map(|number| {
+                    let pin_name = number.to_string();
+                    let spec = pin(pin_name.clone()).pad(pin_name);
+                    match number {
+                        1 => spec.logic("3V3"),
+                        10 => spec.ground(),
+                        20 => spec.power("3V3"),
+                        _ => spec.passive(),
+                    }
+                })),
+        )?;
+
+        let led = design.add(
+            part("D1", "fixture LED")
+                .footprint(smd_footprint("LED_0805", &["1", "2"]))
+                .pin(pin("K").passive().pad("1"))
+                .pin(pin("A").passive().pad("2")),
+        )?;
+
+        let tp_5v = design.add(testpad("TP1", "5V test pad"))?;
+        let tp_scl = design.add(testpad("TP2", "SCL test pad"))?;
+        let tp_led = design.add(testpad("TP3", "LED test pad"))?;
+
+        vin.connect_all(&mut design, [regulator.pin("VIN"), tp_5v.pin("1")]);
+        v3v3.connect_all(
+            &mut design,
+            [regulator.pin("VOUT"), regulator.pin("TAB"), bus.pin("20")],
+        );
+        ground.connect_all(
+            &mut design,
+            [regulator.pin("GND"), bus.pin("10"), led.pin("K")],
+        );
+        i2c_scl.connect_all(&mut design, [bus.pin("1"), tp_scl.pin("1")]);
+        led_status.connect_all(&mut design, [led.pin("A"), tp_led.pin("1")]);
+
+        design.build()
+    }
+
+    fn testpad(refdes: &str, value: &str) -> impl via_core::Component<Output = via_core::ModuleId> {
+        part(refdes, value)
+            .footprint(smd_footprint("TESTPAD_1", &["1"]))
+            .pin(pin("1").passive().pad("1"))
+    }
+
+    fn smd_footprint(name: &str, pads: &[&str]) -> FootprintPads {
+        let mut ir = FootprintIr::new(name);
+        for (idx, pad) in pads.iter().enumerate() {
+            ir.add_pad(Pad::smd(
+                *pad,
+                PadShape::Rect,
+                Point::new(idx as f64 * 1.2, 0.0),
+                Size::new(1.0, 0.7),
+            ));
+        }
+        FootprintPads::from_ir(ir)
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "via",
     version,
-    about = "Project-oriented CLI for via circuit designs"
+    about = "Validate via circuit designs and export reviewable EDA artifacts",
+    long_about = "Validate via circuit designs, render Board IR and snapshots, manage KiCad footprint caches, and export KiCad / LCEDA Pro artifacts."
 )]
 struct Cli {
-    #[arg(long, global = true, value_name = "FILE_OR_DIR")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "FILE_OR_DIR",
+        help = "Path to via.toml or a directory containing it"
+    )]
     project: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -24,18 +119,22 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Build(BuildArgs),
+    #[command(about = "Emit Board IR JSON for a design")]
+    Ir(IrArgs),
+    #[command(about = "Validate a design")]
     Check(CheckArgs),
-    #[command(name = "check-production")]
-    CheckProduction(CheckArgs),
-    Inspect(InspectArgs),
-    Snapshot(InspectArgs),
+    #[command(about = "Emit a JSON snapshot for tooling and CI")]
+    Snapshot(SnapshotArgs),
+    #[command(about = "List designs declared by the via project")]
     Designs,
+    #[command(about = "Render a bill of materials")]
     Bom(BomArgs),
+    #[command(about = "Manage the KiCad footprint cache")]
     Footprints {
         #[command(subcommand)]
         target: FootprintsTarget,
     },
+    #[command(about = "Export design artifacts")]
     Export {
         #[command(subcommand)]
         target: ExportTarget,
@@ -43,32 +142,62 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
-struct BuildArgs {
+struct IrArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "FILE",
+        help = "Write Board IR JSON to a file instead of stdout"
+    )]
     out: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct CheckArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = "Print machine-readable JSON diagnostics")]
     json: bool,
+    #[arg(long, help = "Run production-grade checks instead of prototype checks")]
+    production: bool,
 }
 
 #[derive(Debug, Args)]
-struct InspectArgs {
+struct SnapshotArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "FILE",
+        help = "Write snapshot JSON to a file instead of stdout"
+    )]
     out: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct BomArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "FILE",
+        help = "Write the BOM to a file instead of stdout"
+    )]
     out: Option<PathBuf>,
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, help = "BOM output format")]
     format: BomFormat,
 }
 
@@ -81,78 +210,123 @@ enum BomFormat {
 
 #[derive(Debug, Subcommand)]
 enum ExportTarget {
+    #[command(about = "Export a reviewable KiCad project")]
     Kicad(ExportKicadArgs),
-    Lceda(ExportLcedaArgs),
+    #[command(name = "lceda-pro", about = "Export an LCEDA Pro package")]
+    LcedaPro(ExportLcedaArgs),
+    #[command(about = "EXPERIMENTAL: render a KiCad PCB from a layout model")]
     Pcb(ExportPcbArgs),
 }
 
 #[derive(Debug, Args)]
 struct ExportKicadArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(long, value_name = "DIR", help = "Override the KiCad output directory")]
     out: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, help = "Override the generated KiCad footprint library name")]
     footprint_library_name: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Override the KiCad footprint library path recorded in the project"
+    )]
     footprint_library_path: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override where generated footprint files are written"
+    )]
     footprint_output_dir: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, help = "Skip generated/local footprint library output")]
     no_footprints: bool,
-    #[arg(long)]
+    #[arg(long, help = "Run production checks before exporting")]
     production: bool,
 }
 
 #[derive(Debug, Args)]
 struct ExportLcedaArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "FILE",
+        help = "Write the LCEDA Pro package to this file"
+    )]
     out: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct ExportPcbArgs {
+    #[arg(
+        value_name = "DESIGN",
+        help = "Design name from via.toml; defaults to the project default"
+    )]
     design: Option<String>,
-    #[arg(long)]
+    #[arg(long, value_name = "FILE", help = "Layout JSON file to render")]
     layout: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, value_name = "FILE", help = "KiCad PCB output file")]
     out: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, help = "Override the local KiCad footprint library name")]
     footprint_library_name: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
 enum FootprintsTarget {
+    #[command(about = "Show KiCad footprint cache status")]
     Status(FootprintsStatusArgs),
+    #[command(about = "Import a local KiCad footprint directory into the cache")]
     Import(FootprintsImportArgs),
+    #[command(about = "EXPERIMENTAL: fetch a KiCad footprint cache bundle from a URL")]
     Fetch(FootprintsFetchArgs),
 }
 
 #[derive(Debug, Args)]
 struct FootprintsStatusArgs {
-    #[arg(long)]
+    #[arg(long, help = "KiCad footprint library version")]
     version: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override the footprint cache directory"
+    )]
     cache_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct FootprintsImportArgs {
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "KiCad footprint library directory to import"
+    )]
     from: PathBuf,
-    #[arg(long)]
+    #[arg(long, help = "KiCad footprint library version")]
     version: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override the footprint cache directory"
+    )]
     cache_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct FootprintsFetchArgs {
-    #[arg(long)]
+    #[arg(long, help = "KiCad footprint library version")]
     version: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = "URL of a footprint cache bundle")]
     url: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override the footprint cache directory"
+    )]
     cache_dir: Option<PathBuf>,
 }
 
@@ -160,12 +334,9 @@ fn main() -> via_core::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Build(args)) => build_command(cli.project, args),
-        Some(Command::Check(args)) => check_command(cli.project, args, false),
-        Some(Command::CheckProduction(args)) => check_command(cli.project, args, true),
-        Some(Command::Inspect(args)) | Some(Command::Snapshot(args)) => {
-            inspect_command(cli.project, args)
-        }
+        Some(Command::Ir(args)) => ir_command(cli.project, args),
+        Some(Command::Check(args)) => check_command(cli.project, args),
+        Some(Command::Snapshot(args)) => snapshot_command(cli.project, args),
         Some(Command::Designs) => designs_command(cli.project),
         Some(Command::Bom(args)) => bom_command(cli.project, args),
         Some(Command::Footprints { target }) => match target {
@@ -175,7 +346,7 @@ fn main() -> via_core::Result<()> {
         },
         Some(Command::Export { target }) => match target {
             ExportTarget::Kicad(args) => export_kicad_command(cli.project, args),
-            ExportTarget::Lceda(args) => export_lceda_command(cli.project, args),
+            ExportTarget::LcedaPro(args) => export_lceda_command(cli.project, args),
             ExportTarget::Pcb(args) => export_pcb_command(cli.project, args),
         },
         None => {
@@ -186,7 +357,7 @@ fn main() -> via_core::Result<()> {
     }
 }
 
-fn build_command(project_path: Option<PathBuf>, args: BuildArgs) -> via_core::Result<()> {
+fn ir_command(project_path: Option<PathBuf>, args: IrArgs) -> via_core::Result<()> {
     let project = via_project::Project::discover(project_path)?;
     let (design_name, board) = project.build_design(args.design.as_deref())?;
     if let Some(out) = args.out.map(|path| project.resolve_path(path)) {
@@ -201,7 +372,7 @@ fn build_command(project_path: Option<PathBuf>, args: BuildArgs) -> via_core::Re
     Ok(())
 }
 
-fn inspect_command(project_path: Option<PathBuf>, args: InspectArgs) -> via_core::Result<()> {
+fn snapshot_command(project_path: Option<PathBuf>, args: SnapshotArgs) -> via_core::Result<()> {
     let project = via_project::Project::discover(project_path)?;
     let (_, board) = project.build_design(args.design.as_deref())?;
     let loaded = board.footprints().count();
@@ -220,11 +391,8 @@ fn inspect_command(project_path: Option<PathBuf>, args: InspectArgs) -> via_core
     Ok(())
 }
 
-fn check_command(
-    project_path: Option<PathBuf>,
-    args: CheckArgs,
-    production: bool,
-) -> via_core::Result<()> {
+fn check_command(project_path: Option<PathBuf>, args: CheckArgs) -> via_core::Result<()> {
+    let production = args.production;
     let (_, board) = load_board(project_path, args.design)?;
     let loaded = board.footprints().count();
     let diagnostics = if production {
@@ -522,6 +690,56 @@ fn resolve_footprint_version(
         .and_then(|project| project.kicad_footprints_version())
         .unwrap_or(via_kicad_footprints::DEFAULT_KICAD_FOOTPRINTS_VERSION)
         .to_owned())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    fn help_for(mut command: clap::Command) -> String {
+        let mut bytes = Vec::new();
+        command.write_long_help(&mut bytes).unwrap();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn top_level_help_lists_current_commands() {
+        let help = help_for(Cli::command());
+
+        for command in ["ir", "check", "snapshot", "export", "footprints"] {
+            assert!(
+                help.contains(command),
+                "expected top-level help to contain {command:?}:\n{help}"
+            );
+        }
+
+        for removed in ["check-production", "inspect", "build"] {
+            assert!(
+                !help.contains(removed),
+                "expected top-level help not to contain removed command {removed:?}:\n{help}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_help_exposes_production_flag() {
+        let mut command = Cli::command();
+        let check = command.find_subcommand_mut("check").unwrap().clone();
+        let help = help_for(check);
+
+        assert!(help.contains("--production"), "{help}");
+    }
+
+    #[test]
+    fn export_help_uses_lceda_pro_and_marks_pcb_experimental() {
+        let mut command = Cli::command();
+        let export = command.find_subcommand_mut("export").unwrap().clone();
+        let help = help_for(export);
+
+        assert!(help.contains("lceda-pro"), "{help}");
+        assert!(help.contains("EXPERIMENTAL"), "{help}");
+        assert!(!help.contains("lceda "), "{help}");
+    }
 }
 
 fn render_bom(board: &via_core::Board, format: BomFormat) -> String {

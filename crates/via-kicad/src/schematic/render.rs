@@ -22,7 +22,10 @@ pub(super) fn render_schematic(
     out.push_str("(kicad_sch\n");
     out.push_str(&format!("  (version {SCHEMATIC_VERSION})\n"));
     out.push_str(&format!("  (generator \"{GENERATOR}\")\n"));
-    out.push_str("  (generator_version \"0.1.0\")\n");
+    out.push_str(&format!(
+        "  (generator_version \"{}\")\n",
+        env!("CARGO_PKG_VERSION")
+    ));
     out.push_str(&format!("  (uuid \"{sheet_uuid}\")\n"));
     out.push_str("  (paper \"A3\")\n");
     out.push_str("  (title_block\n");

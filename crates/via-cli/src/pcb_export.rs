@@ -124,8 +124,11 @@ fn render_kicad_pcb(
     let mut out = String::new();
     out.push_str("(kicad_pcb\n");
     out.push_str("  (version 20240108)\n");
-    out.push_str("  (generator \"via-cli\")\n");
-    out.push_str("  (generator_version \"0.1.0\")\n");
+    out.push_str("  (generator \"via\")\n");
+    out.push_str(&format!(
+        "  (generator_version \"{}\")\n",
+        env!("CARGO_PKG_VERSION")
+    ));
     out.push_str("  (general\n    (thickness 1.6)\n  )\n");
     out.push_str("  (paper \"A4\")\n");
     out.push_str("  (layers\n");
@@ -774,7 +777,7 @@ mod tests {
 
     #[test]
     fn debug_io_demo_pcb_export_contains_rules_geometry_and_copper() {
-        let board = via_examples::debug_io_demo::debug_io_demo_board().unwrap();
+        let board = crate::test_fixtures::debug_io_board().unwrap();
         let modules = board
             .modules()
             .enumerate()
