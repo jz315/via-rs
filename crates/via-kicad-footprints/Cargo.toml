@@ -5,14 +5,14 @@ edition.workspace = true
 description = "KiCad official footprint cache manifest and export helpers for VIA."
 repository.workspace = true
 homepage.workspace = true
-license-file = "LICENSE.md"
+license.workspace = true
 readme = "README.md"
 categories = ["development-tools"]
 keywords = ["kicad", "pcb", "footprint", "eda"]
 include = [
     "Cargo.toml",
     "README.md",
-    "LICENSE.md",
+    "KICAD_FOOTPRINT_LICENSE.md",
     "THIRD_PARTY_NOTICES.md",
     "src/**",
 ]

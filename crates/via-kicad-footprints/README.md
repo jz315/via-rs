@@ -11,8 +11,8 @@ does not bundle project-required `.kicad_mod` files. It provides:
 - generic footprint lookup and copy helpers keyed by KiCad library/name.
 
 KiCad official footprint files are licensed under
-`CC-BY-SA-4.0 WITH KiCad-libraries-exception`; see `LICENSE.md` and
-`THIRD_PARTY_NOTICES.md`.
+`CC-BY-SA-4.0 WITH KiCad-libraries-exception`; see
+`KICAD_FOOTPRINT_LICENSE.md` and `THIRD_PARTY_NOTICES.md`.
 
 Default cache path:
 

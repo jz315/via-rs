@@ -8,7 +8,7 @@
   <a href="README.md#cli"><img alt="KiCad export" src="https://img.shields.io/badge/KiCad-export-314cb6?style=for-the-badge"></a>
   <a href="README.md#cli"><img alt="LCEDA Pro export" src="https://img.shields.io/badge/LCEDA%20Pro-export-00a3a3?style=for-the-badge"></a>
   <a href="TUTORIAL.md"><img alt="Tutorial" src="https://img.shields.io/badge/docs-tutorial-0a7f42?style=for-the-badge"></a>
-  <a href="Cargo.toml"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6a35ff?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="License MPL-2.0" src="https://img.shields.io/badge/license-MPL--2.0-6a35ff?style=for-the-badge"></a>
 </p>
 
 # via
@@ -271,3 +271,12 @@ Out of scope for the generic library:
 - Autorouting.
 - Gerber generation.
 - Fabrication-ready claims without KiCad DRC and human footprint review.
+
+## License
+
+`via-rs` is licensed under the Mozilla Public License 2.0.
+
+Official KiCad footprint assets imported or fetched through
+`via-kicad-footprints` remain under
+`CC-BY-SA-4.0 WITH KiCad-libraries-exception`; see that crate's third-party
+notices.
