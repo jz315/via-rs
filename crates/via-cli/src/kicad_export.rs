@@ -16,6 +16,7 @@ pub(crate) fn write_artifacts(
     footprint_cache_version: &str,
 ) -> via_core::Result<KicadExportSummary> {
     let stem = project_name;
+    via_core::validate_file_stem(stem)?;
     let footprint_summary = if let Some(footprint_export) = &footprint_export {
         write_embedded_footprints(board, &footprint_export.output_dir, footprint_cache_version)?
     } else {
@@ -25,7 +26,7 @@ pub(crate) fn write_artifacts(
         }
     };
     via_kicad::write_netlist(board, out.join(format!("{stem}.net")))?;
-    let mut options = via_kicad::SchematicProjectOptions::new(stem);
+    let mut options = via_kicad::SchematicProjectOptions::new(stem).project_name(stem);
     if let Some(footprint_export) = footprint_export {
         options =
             options.footprint_library(footprint_export.library_name, footprint_export.library_path);
@@ -106,8 +107,9 @@ fn write_embedded_footprints(
         if let Some(ir) = footprint.ir() {
             let file_name = via_kicad_footprints::footprint_file_name(footprint.name())
                 .map_err(|err| via_core::Error::Io(err.to_string()))?;
-            ir.write_kicad_mod(pretty_dir.join(file_name))
+            let text = via_footprint_ir::kicad::try_render_kicad_mod(ir)
                 .map_err(|err| via_core::Error::Io(err.to_string()))?;
+            via_core::atomic_write(pretty_dir.join(file_name), text)?;
             generated_footprints += 1;
             continue;
         }
@@ -212,7 +214,7 @@ fn write_managed_footprints(path: &Path, files: &BTreeSet<String>) -> via_core::
         text.push_str(file);
         text.push('\n');
     }
-    std::fs::write(path, text).map_err(|err| via_core::Error::Io(err.to_string()))
+    via_core::atomic_write(path, text)
 }
 
 fn is_safe_managed_footprint_file(file: &str) -> bool {

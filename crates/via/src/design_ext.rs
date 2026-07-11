@@ -1,15 +1,8 @@
-use via_core::{Board, Design, NetHandle, PinRef, Result, Voltage};
+use via_core::{Design, NetHandle, Voltage};
 
 pub trait DesignExt {
     fn rail(&mut self, name: impl Into<String>) -> RailBuilder<'_>;
     fn signal(&mut self, name: impl Into<String>, domain: impl Into<String>) -> NetHandle;
-    fn connect<I>(&mut self, net: &NetHandle, pins: I) -> &mut Self
-    where
-        I: IntoIterator<Item = PinRef>;
-    fn connect_named<I>(&mut self, name: impl Into<String>, pins: I) -> &mut Self
-    where
-        I: IntoIterator<Item = PinRef>;
-    fn finish(self) -> Result<Board>;
 }
 
 pub struct RailBuilder<'a> {
@@ -41,26 +34,6 @@ impl DesignExt for Design {
 
     fn signal(&mut self, name: impl Into<String>, domain: impl Into<String>) -> NetHandle {
         self.logic(name, domain)
-    }
-
-    fn connect<I>(&mut self, net: &NetHandle, pins: I) -> &mut Self
-    where
-        I: IntoIterator<Item = PinRef>,
-    {
-        net.connect_all(self, pins);
-        self
-    }
-
-    fn connect_named<I>(&mut self, name: impl Into<String>, pins: I) -> &mut Self
-    where
-        I: IntoIterator<Item = PinRef>,
-    {
-        self.net(name).connect_all(self, pins);
-        self
-    }
-
-    fn finish(self) -> Result<Board> {
-        self.build()
     }
 }
 
@@ -97,7 +70,9 @@ mod tests {
         design.connect(&v3v3, [a.pin("1"), b.pin("VCC")]);
         design.connect(&signal, [a.pin("2"), b.pin("IN")]);
 
-        let board = design.finish().unwrap();
+        let board = design
+            .finish(via_core::ValidationProfile::Prototype)
+            .unwrap();
         assert_eq!(board.nets().count(), 2);
     }
 }

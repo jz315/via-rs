@@ -2,6 +2,7 @@
 name = "via-kicad-footprints"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "KiCad official footprint cache manifest and export helpers for VIA."
 repository.workspace = true
 homepage.workspace = true

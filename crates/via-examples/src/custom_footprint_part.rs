@@ -20,7 +20,7 @@ impl CustomAnalogSensor {
     }
 }
 
-fn custom_sensor_footprint() -> FootprintPads {
+fn custom_sensor_footprint() -> FootprintDefinition {
     let mut ir = FootprintIr::new("Demo_Sensor_SMD_1x03")
         .description("Example embedded SMD footprint for a three-pin sensor")
         .tag("via-example")
@@ -47,7 +47,7 @@ fn custom_sensor_footprint() -> FootprintPads {
                 .size(0.8, 0.8),
         );
 
-    FootprintPads::from_ir(ir)
+    FootprintDefinition::generated(ir)
 }
 
 pub fn custom_analog_sensor(refdes: &str) -> impl Component<Output = CustomAnalogSensor> {
@@ -58,16 +58,16 @@ pub fn custom_analog_sensor(refdes: &str) -> impl Component<Output = CustomAnalo
         .pin(pin("VCC").power("3V3").pad("2"))
         .pin(pin("GND").ground().pad("3"))
         .production_note("Example footprint geometry; replace with a datasheet-backed footprint")
-        .verify()
+        .needs_verification()
         .handle(|id| CustomAnalogSensor { id })
 }
 
 pub fn custom_footprint_part_board() -> Result<Board> {
     let mut d = Design::new("custom_footprint_part").units(Unit::Mm);
 
-    let v3v3 = d.rail("3V3").dc(3.3);
+    let v3v3 = d.power("3V3", 3.3);
     let ground = d.ground("GND");
-    let analog = d.signal("SENSOR_OUT", "3V3");
+    let analog = d.logic("SENSOR_OUT", "3V3");
 
     let header = d.add(
         part("J1", "Host connector")
@@ -92,7 +92,7 @@ pub fn custom_footprint_part_board() -> Result<Board> {
         [header.pin("GND"), sensor.ground(), bypass.negative()],
     );
 
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 
 #[cfg(test)]

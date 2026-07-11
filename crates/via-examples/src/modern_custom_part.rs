@@ -31,16 +31,16 @@ pub fn demo_i2c_sensor(refdes: &str) -> impl Component<Output = DemoI2cSensor> {
         .pin(pin("SCL").logic("3V3").pad("3"))
         .pin(pin("SDA").logic("3V3").pad("4"))
         .production_note("Replace demo sensor with an exact sourced module before production")
-        .verify()
+        .needs_verification()
         .handle(|id| DemoI2cSensor { id })
 }
 
 pub fn custom_part_board() -> Result<Board> {
     let mut design = Design::new("modern_custom_part");
-    let v3v3 = design.rail("3V3").dc(3.3);
+    let v3v3 = design.power("3V3", 3.3);
     let ground = design.ground("GND");
-    let scl = design.signal("I2C_SCL", "3V3");
-    let sda = design.signal("I2C_SDA", "3V3");
+    let scl = design.logic("I2C_SCL", "3V3");
+    let sda = design.logic("I2C_SDA", "3V3");
 
     let sensor = design.add(demo_i2c_sensor("U1"))?;
     let header = design.add(
@@ -57,8 +57,7 @@ pub fn custom_part_board() -> Result<Board> {
     design.connect(&scl, [header.pin("SCL"), sensor.scl()]);
     design.connect(&sda, [header.pin("SDA"), sensor.sda()]);
 
-    design.check(CheckProfile::Draft)?;
-    Ok(design.into_unchecked_board())
+    design.finish(ValidationProfile::Draft)
 }
 
 #[cfg(test)]

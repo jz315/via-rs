@@ -105,7 +105,9 @@ fn write_file(path: PathBuf, contents: &str, force: bool) -> via_core::Result<()
 
 fn via_toml(scaffold: &Scaffold) -> String {
     format!(
-        r#"[project]
+        r#"schema = 1
+
+[project]
 name = "{package}"
 version = "0.1.0"
 default-design = "{design}"
@@ -114,17 +116,15 @@ default-design = "{design}"
 provider = "cargo"
 package = "{package}"
 bin = "emit-ir"
+timeout-seconds = 120
+max-output-bytes = 8388608
 
 [outputs.kicad]
 dir = "generated/kicad"
-project = "{kicad}"
-footprint-library-name = "{kicad}"
-footprint-library-path = "{kicad}.pretty"
-footprint-output-dir = "generated/kicad/{kicad}.pretty"
+project-name = "{kicad}"
 
 [kicad-footprints]
 version = "10.0.4"
-source = "github-release"
 "#,
         package = scaffold.package_name,
         design = scaffold.design,
@@ -142,7 +142,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-via = {{ package = "via-pcb", version = "0.1.1" }}
+via = {{ package = "via-pcb", version = "0.3.0" }}
 "#,
         package = scaffold.package_name,
     )
@@ -157,7 +157,7 @@ pub fn board() -> Result<Board> {{
         .rules(Rules::new())
         .units(Unit::Mm);
 
-    let signal = design.signal("SIGNAL", "3V3");
+    let signal = design.logic("SIGNAL", "3V3");
     let ground = design.ground("GND");
 
     let input = design.add(
@@ -179,7 +179,7 @@ pub fn board() -> Result<Board> {{
     design.connect(&signal, [input.pin("SIG"), output.pin("SIG")]);
     design.connect(&ground, [input.pin("GND"), output.pin("GND")]);
 
-    design.finish()
+    design.finish(ValidationProfile::Prototype)
 }}
 "#,
         design = scaffold.design,
@@ -305,9 +305,18 @@ mod tests {
         assert!(root.join("src").join("bin").join("emit-ir.rs").is_file());
 
         let via_toml = std::fs::read_to_string(root.join("via.toml")).unwrap();
+        assert!(via_toml.starts_with("schema = 1"));
         assert!(via_toml.contains("name = \"my-board\""));
         assert!(via_toml.contains("package = \"my-board\""));
         assert!(via_toml.contains("bin = \"emit-ir\""));
+        assert!(via_toml.contains("timeout-seconds = 120"));
+        assert!(via_toml.contains("max-output-bytes = 8388608"));
+        assert!(via_toml.contains("[outputs.kicad]"));
+        assert!(via_toml.contains("dir = \"generated/kicad\""));
+        assert!(via_toml.contains("project-name = \"my_board\""));
+        assert!(!via_toml.contains("footprint-library-name"));
+        assert!(!via_toml.contains("footprint-library-path"));
+        assert!(!via_toml.contains("footprint-output-dir"));
         let cargo_toml = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
         assert!(cargo_toml.contains("[workspace]"));
 

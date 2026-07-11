@@ -2,6 +2,7 @@
 name = "via-project"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Project configuration and design provider helpers for via."
 repository.workspace = true
 homepage.workspace = true
@@ -14,4 +15,16 @@ keywords.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
-via-core = { version = "=0.1.1", path = "../via-core" }
+via-core = { version = "=0.3.0", path = "../via-core" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }

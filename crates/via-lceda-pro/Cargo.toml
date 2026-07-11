@@ -2,6 +2,7 @@
 name = "via-lceda-pro"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "LCEDA Pro export helpers for via."
 repository.workspace = true
 homepage.workspace = true
@@ -11,5 +12,5 @@ categories.workspace = true
 keywords.workspace = true
 
 [dependencies]
-via-core = { version = "=0.1.1", path = "../via-core" }
-via-footprint-ir = { version = "=0.1.1", path = "../via-footprint-ir" }
+via-core = { version = "=0.3.0", path = "../via-core" }
+via-footprint-ir = { version = "=0.3.0", path = "../via-footprint-ir" }

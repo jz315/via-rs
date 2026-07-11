@@ -48,6 +48,9 @@ pub struct PartSpecBuilder {
     footprint_pads: Vec<FootprintPads>,
 }
 
+/// Preferred name for the general-purpose part builder.
+pub type PartBuilder = PartSpecBuilder;
+
 pub fn part(refdes: impl Into<String>, value: impl Into<String>) -> PartSpecBuilder {
     PartSpecBuilder::new(refdes, value)
 }
@@ -92,6 +95,12 @@ impl PartSpecBuilder {
             Footprint::Pads(pads) => {
                 let name = pads.name().to_owned();
                 self.part = self.part.footprint(name);
+                self.footprint_pads.push(*pads);
+            }
+            Footprint::Definition(definition) => {
+                let pads = definition.into_legacy_pads();
+                let name = pads.name().to_owned();
+                self.part = self.part.footprint(name);
                 self.footprint_pads.push(pads);
             }
         }
@@ -127,6 +136,15 @@ impl PartSpecBuilder {
     }
 
     pub fn verify(mut self) -> Self {
+        self.part = self.part.verify();
+        self
+    }
+
+    /// Marks this part as requiring physical verification before production.
+    ///
+    /// This spelling avoids the ambiguity of the historical [`Self::verify`]
+    /// method, which sets a requirement rather than recording verification.
+    pub fn needs_verification(mut self) -> Self {
         self.part = self.part.verify();
         self
     }
@@ -367,6 +385,33 @@ mod tests {
                 .any(|footprint| footprint.name() == "R_0805")
         );
         assert_eq!(board.module("R1").unwrap().footprint_name(), Some("R_0805"));
+    }
+
+    #[test]
+    fn explicit_footprint_definition_has_one_export_source() {
+        let definition = crate::FootprintDefinition::kicad_library(
+            "Resistor_SMD",
+            "R_0805_2012Metric",
+            ["1", "2"],
+        );
+        let mut design = Design::new("definition");
+        let resistor = design
+            .add(
+                part("R1", "1k")
+                    .footprint(definition)
+                    .pin(pin("1").passive())
+                    .pin(pin("2").passive()),
+            )
+            .unwrap();
+        design.connect_named("N", [resistor.pin("1"), resistor.pin("2")]);
+
+        let board = design.finish(crate::ValidationProfile::Prototype).unwrap();
+        let footprint = board.footprints().next().unwrap();
+        assert!(matches!(
+            footprint.asset(),
+            Some(crate::FootprintAsset::KicadLibrary { library, name })
+                if library == "Resistor_SMD" && name == "R_0805_2012Metric"
+        ));
     }
 
     #[test]

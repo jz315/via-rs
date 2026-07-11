@@ -2,6 +2,7 @@
 name = "via-footprint-ir"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Low-level footprint intermediate representation for via."
 repository.workspace = true
 homepage.workspace = true

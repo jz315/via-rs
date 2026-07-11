@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="Cargo.toml"><img alt="version" src="https://img.shields.io/badge/version-0.1.1-f05a28?style=for-the-badge"></a>
+  <a href="Cargo.toml"><img alt="version" src="https://img.shields.io/badge/version-0.3.0-f05a28?style=for-the-badge"></a>
   <a href="Cargo.toml"><img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-4b4f56?style=for-the-badge&logo=rust&logoColor=white"></a>
   <a href="README.md#cli"><img alt="KiCad export" src="https://img.shields.io/badge/KiCad-export-314cb6?style=for-the-badge"></a>
   <a href="README.md#cli"><img alt="LCEDA Pro export" src="https://img.shields.io/badge/LCEDA%20Pro-export-00a3a3?style=for-the-badge"></a>
@@ -33,7 +33,7 @@ Add `via-pcb` to your Rust project:
 
 ```toml
 [dependencies]
-via = { package = "via-pcb", version = "0.1.1" }
+via = { package = "via-pcb", version = "0.3.0" }
 ```
 
 The crates.io package is `via-pcb`, while the Rust crate name is still `via`:
@@ -46,8 +46,8 @@ pub fn board() -> Result<Board> {
         .rules(Rules::new())
         .units(Unit::Mm);
 
-    let signal = d.signal("SIGNAL", "3V3");
-    let v3v3 = d.rail("3V3").dc(3.3);
+    let signal = d.logic("SIGNAL", "3V3");
+    let v3v3 = d.power("3V3", 3.3);
     let ground = d.ground("GND");
 
     let j1 = d.add(
@@ -63,8 +63,7 @@ pub fn board() -> Result<Board> {
     d.connect(&v3v3, [j1.pin("3V3")]);
     d.connect(&ground, [j1.pin("GND")]);
 
-    d.check(CheckProfile::Prototype)?;
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 ```
 
@@ -120,8 +119,8 @@ pub fn board() -> Result<Board> {
         .rules(Rules::new())
         .units(Unit::Mm);
 
-    let signal = d.signal("SIGNAL", "3V3");
-    let v3v3 = d.rail("3V3").dc(3.3);
+    let signal = d.logic("SIGNAL", "3V3");
+    let v3v3 = d.power("3V3", 3.3);
     let ground = d.ground("GND");
 
     let input = d.add(
@@ -146,8 +145,7 @@ pub fn board() -> Result<Board> {
     d.connect(&v3v3, [input.pin("3V3"), load.pin("VCC")]);
     d.connect(&ground, [input.pin("GND"), load.pin("GND")]);
 
-    d.check(CheckProfile::Prototype)?;
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 ```
 
@@ -218,6 +216,8 @@ The CLI reads a design provider, receives stable `BoardIr` JSON, then runs
 checks or exporters. Replace the placeholder values below in your project.
 
 ```toml
+schema = 1
+
 [project]
 name = "<project-name>"
 version = "<project-version>"
@@ -227,18 +227,38 @@ default-design = "<design-name>"
 provider = "cargo"
 package = "<provider-package>"
 command = "<provider-command>"
+timeout-seconds = 120
+max-output-bytes = 8388608
 
 [outputs.kicad]
 dir = "<kicad-output-dir>"
-project = "<kicad-project-name>"
-footprint-library-name = "<kicad-footprint-library-name>"
-footprint-library-path = "<kicad-footprint-library-path>"
-footprint-output-dir = "<generated-footprint-output-dir>"
+project-name = "<kicad-project-name>"
 
 [kicad-footprints]
 version = "10.0.4"
-source = "github-release"
 ```
+
+Provider execution defaults to a 120-second timeout and an 8 MiB limit for each
+captured output stream. Logs belong on stderr; stdout must contain only Board IR
+JSON. KiCad footprint libraries default to
+`${KIPRJMOD}/<kicad-project-name>.pretty` and are written inside the configured
+KiCad output directory.
+
+Exported KiCad projects are intended to be portable: the generated project
+contains its own local `.pretty` footprint library for generated and
+project-required footprints, so someone opening the exported KiCad directory
+does not need a global VIA footprint cache. A VIA developer who wants to
+regenerate a project that references official KiCad footprints can install the
+versioned cache once:
+
+```powershell
+via footprints install --version 10.0.4
+```
+
+The default installer downloads `kicad-footprints-10.0.4.tar.zst` from the VIA
+GitHub Release tag `kicad-footprints-10.0.4`. Use `via footprints import` when
+you already have a local KiCad footprint checkout, or
+`via footprints install --url <url>` for a private mirror.
 
 The provider command prints the board IR:
 
@@ -256,14 +276,19 @@ Project commands:
 ```powershell
 cargo install via-pcb-cli
 via init <project-dir>
-via ir <design-name> --out <board-ir-json>
-via check <design-name>
-via check <design-name> --production
-via snapshot <design-name> --out <snapshot-json>
-via bom <design-name> --format csv --out <bom-csv>
+via doctor
+via inspect summary
+via inspect nets
+via inspect nets --json
+via export ir <design-name> --out <board-ir-json>
+via check <design-name> --profile prototype
+via check <design-name> --profile production
+via export snapshot <design-name> --out <snapshot-json>
+via inspect bom <design-name> --format csv --out <bom-csv>
 via footprints status
+via footprints install --version 10.0.4
 via footprints import --version 10.0.4 --from "<KiCad footprints dir>"
-via footprints fetch --url "<cache-bundle-url>" # experimental
+via footprints install --version 10.0.4 --url "<cache-bundle-url>"
 via export kicad <design-name>
 via export lceda-pro <design-name> --out <lceda-package>
 via export pcb <design-name> --layout <layout-json> --out <kicad-pcb> # experimental
@@ -275,8 +300,17 @@ via export pcb <design-name> --layout <layout-json> --out <kicad-pcb> # experime
 git clone https://github.com/jz315/via-rs.git
 cd via-rs
 cargo fmt --check
-cargo test --workspace
+cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+python tools/verify_packages.py
 ```
+
+Maintainers create the published cache bundle with
+`cargo run -p xtask -- footprints bundle --version <version> --out <file>`;
+normal users only need `install`, `import`, and `status`.
+
+See [RELEASING.md](https://github.com/jz315/via-rs/blob/main/RELEASING.md) for the
+coordinated crates.io publish order.
 
 
 ## License

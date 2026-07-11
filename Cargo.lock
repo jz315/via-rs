@@ -830,7 +830,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "via-core"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "serde",
  "via-footprint-ir",
@@ -838,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "via-examples"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "via-core",
  "via-pcb",
@@ -846,7 +846,7 @@ dependencies = [
 
 [[package]]
 name = "via-footprint"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "via-core",
  "via-footprint-ir",
@@ -854,14 +854,14 @@ dependencies = [
 
 [[package]]
 name = "via-footprint-ir"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "via-kicad"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "via-core",
  "via-footprint",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "via-kicad-footprints"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -882,11 +882,11 @@ dependencies = [
 
 [[package]]
 name = "via-kicad-sexp"
-version = "0.1.1"
+version = "0.3.0"
 
 [[package]]
 name = "via-lceda-pro"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "via-core",
  "via-footprint-ir",
@@ -894,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "via-parts"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "via-core",
  "via-footprint",
@@ -902,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "via-pcb"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "via-core",
  "via-footprint",
@@ -913,11 +913,12 @@ dependencies = [
 
 [[package]]
 name = "via-pcb-cli"
-version = "0.1.2"
+version = "0.3.0"
 dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "sha2",
  "via-core",
  "via-footprint-ir",
  "via-kicad",
@@ -929,12 +930,14 @@ dependencies = [
 
 [[package]]
 name = "via-project"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "toml",
  "via-core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1072,6 +1075,15 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix",
+]
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "sha2",
+ "via-kicad-footprints",
 ]
 
 [[package]]

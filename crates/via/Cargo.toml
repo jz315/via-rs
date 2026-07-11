@@ -2,6 +2,7 @@
 name = "via-pcb"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "User-facing facade crate for the VIA Rust EDA library."
 repository.workspace = true
 homepage.workspace = true
@@ -15,8 +16,8 @@ name = "via"
 path = "src/lib.rs"
 
 [dependencies]
-via-core = { version = "=0.1.1", path = "../via-core" }
-via-footprint = { version = "=0.1.1", path = "../via-footprint" }
-via-footprint-ir = { version = "=0.1.1", path = "../via-footprint-ir" }
-via-parts = { version = "=0.1.1", path = "../via-parts" }
-via-project = { version = "=0.1.1", path = "../via-project" }
+via-core = { version = "=0.3.0", path = "../via-core" }
+via-footprint = { version = "=0.3.0", path = "../via-footprint" }
+via-footprint-ir = { version = "=0.3.0", path = "../via-footprint-ir" }
+via-parts = { version = "=0.3.0", path = "../via-parts" }
+via-project = { version = "=0.3.0", path = "../via-project" }

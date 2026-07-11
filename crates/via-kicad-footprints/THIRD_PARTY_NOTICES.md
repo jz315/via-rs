@@ -11,8 +11,8 @@
 
 This crate does not vendor the official footprint files into the crates.io
 package. Official KiCad `.kicad_mod` files are imported into a local cache with
-`via footprints import` or fetched from a separate release asset with
-`via footprints fetch`.
+`via footprints import` or installed from a separate release asset with
+`via footprints install`.
 
 Project-specific official footprint selections and verification notes belong in
 downstream project crates and generated project documentation.

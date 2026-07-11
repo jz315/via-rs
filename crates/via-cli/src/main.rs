@@ -2,12 +2,17 @@ use std::path::PathBuf;
 
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
+mod diagnostics;
+mod doctor;
 mod init;
+mod inspection;
 mod json;
 mod kicad_export;
 mod kicad_mod_asset;
 mod pcb_export;
 mod report;
+
+use diagnostics::ColorChoice;
 
 #[cfg(test)]
 mod test_fixtures {
@@ -114,6 +119,15 @@ struct Cli {
     )]
     project: Option<PathBuf>,
 
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t = ColorChoice::Auto,
+        help = "Control diagnostic colors"
+    )]
+    color: ColorChoice,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -122,15 +136,28 @@ struct Cli {
 enum Command {
     #[command(about = "Create a new via PCB project scaffold")]
     Init(init::InitArgs),
-    #[command(about = "Emit Board IR JSON for a design")]
+    #[command(hide = true, about = "Deprecated alias for `via export ir`")]
     Ir(IrArgs),
     #[command(about = "Validate a design")]
     Check(CheckArgs),
-    #[command(about = "Emit a JSON snapshot for tooling and CI")]
+    #[command(about = "Diagnose project, provider, Board IR, and KiCad setup")]
+    Doctor(doctor::DoctorArgs),
+    #[command(about = "Explain a via diagnostic code")]
+    Explain(ExplainArgs),
+    #[command(hide = true, about = "Deprecated alias for `via export snapshot`")]
     Snapshot(SnapshotArgs),
-    #[command(about = "List designs declared by the via project")]
+    #[command(about = "Inspect project and design data")]
+    Inspect {
+        #[command(subcommand)]
+        target: InspectTarget,
+    },
+    #[command(hide = true, about = "Deprecated alias for `via inspect summary`")]
+    Show(inspection::ShowArgs),
+    #[command(hide = true, about = "Deprecated alias for `via inspect nets`")]
+    Nets(inspection::NetsArgs),
+    #[command(hide = true, about = "Deprecated alias for `via inspect designs`")]
     Designs,
-    #[command(about = "Render a bill of materials")]
+    #[command(hide = true, about = "Deprecated alias for `via inspect bom`")]
     Bom(BomArgs),
     #[command(about = "Manage the KiCad footprint cache")]
     Footprints {
@@ -142,6 +169,18 @@ enum Command {
         #[command(subcommand)]
         target: ExportTarget,
     },
+}
+
+#[derive(Debug, Args)]
+struct ExplainArgs {
+    #[arg(
+        value_name = "CODE",
+        required_unless_present = "list",
+        help = "Diagnostic code to explain, such as net.unknown_pin"
+    )]
+    code: Option<String>,
+    #[arg(long, help = "List all known diagnostic codes")]
+    list: bool,
 }
 
 #[derive(Debug, Args)]
@@ -166,10 +205,56 @@ struct CheckArgs {
         help = "Design name from via.toml; defaults to the project default"
     )]
     design: Option<String>,
-    #[arg(long, help = "Print machine-readable JSON diagnostics")]
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ValidationProfileArg::Prototype,
+        help = "Validation policy to apply"
+    )]
+    profile: ValidationProfileArg,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text, help = "Output format")]
+    format: OutputFormat,
+    #[arg(long, hide = true, help = "Deprecated alias for --format json")]
     json: bool,
-    #[arg(long, help = "Run production-grade checks instead of prototype checks")]
+    #[arg(long, hide = true, help = "Deprecated alias for --profile production")]
     production: bool,
+}
+
+impl CheckArgs {
+    fn profile(&self) -> via_core::ValidationProfile {
+        if self.production {
+            via_core::ValidationProfile::Production
+        } else {
+            self.profile.into()
+        }
+    }
+
+    fn json(&self) -> bool {
+        self.json || matches!(self.format, OutputFormat::Json)
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ValidationProfileArg {
+    Draft,
+    Prototype,
+    Production,
+}
+
+impl From<ValidationProfileArg> for via_core::ValidationProfile {
+    fn from(value: ValidationProfileArg) -> Self {
+        match value {
+            ValidationProfileArg::Draft => Self::Draft,
+            ValidationProfileArg::Prototype => Self::Prototype,
+            ValidationProfileArg::Production => Self::Production,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
 }
 
 #[derive(Debug, Args)]
@@ -213,12 +298,28 @@ enum BomFormat {
 
 #[derive(Debug, Subcommand)]
 enum ExportTarget {
+    #[command(about = "Emit Board IR JSON for a design")]
+    Ir(IrArgs),
+    #[command(about = "Emit a JSON snapshot for tooling and CI")]
+    Snapshot(SnapshotArgs),
     #[command(about = "Export a reviewable KiCad project")]
     Kicad(ExportKicadArgs),
     #[command(name = "lceda-pro", about = "Export an LCEDA Pro package")]
     LcedaPro(ExportLcedaArgs),
     #[command(about = "EXPERIMENTAL: render a KiCad PCB from a layout model")]
     Pcb(ExportPcbArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum InspectTarget {
+    #[command(about = "Show a quick project and design summary")]
+    Summary(inspection::ShowArgs),
+    #[command(about = "List designs declared by the via project")]
+    Designs,
+    #[command(about = "Inspect board nets and their connected pins")]
+    Nets(inspection::NetsArgs),
+    #[command(about = "Render a bill of materials")]
+    Bom(BomArgs),
 }
 
 #[derive(Debug, Args)]
@@ -283,9 +384,16 @@ struct ExportPcbArgs {
 enum FootprintsTarget {
     #[command(about = "Show KiCad footprint cache status")]
     Status(FootprintsStatusArgs),
+    #[command(about = "Install the KiCad footprint cache from the default release asset")]
+    Install(FootprintsInstallArgs),
     #[command(about = "Import a local KiCad footprint directory into the cache")]
     Import(FootprintsImportArgs),
-    #[command(about = "EXPERIMENTAL: fetch a KiCad footprint cache bundle from a URL")]
+    #[command(
+        hide = true,
+        about = "Deprecated: use `cargo run -p xtask -- footprints bundle` for release bundles"
+    )]
+    Bundle(FootprintsBundleArgs),
+    #[command(hide = true, about = "Deprecated alias for `footprints install --url`")]
     Fetch(FootprintsFetchArgs),
 }
 
@@ -309,6 +417,12 @@ struct FootprintsImportArgs {
         help = "KiCad footprint library directory to import"
     )]
     from: PathBuf,
+    #[arg(
+        long,
+        value_name = "URL_OR_LABEL",
+        help = "Override the manifest upstream source metadata"
+    )]
+    upstream_source: Option<String>,
     #[arg(long, help = "KiCad footprint library version")]
     version: Option<String>,
     #[arg(
@@ -317,6 +431,46 @@ struct FootprintsImportArgs {
         help = "Override the footprint cache directory"
     )]
     cache_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct FootprintsInstallArgs {
+    #[arg(long, help = "KiCad footprint library version")]
+    version: Option<String>,
+    #[arg(
+        long,
+        help = "Override the footprint cache bundle URL; defaults to the via-rs GitHub Release asset"
+    )]
+    url: Option<String>,
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override the footprint cache directory"
+    )]
+    cache_dir: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Download and replace the cache even when it is already valid"
+    )]
+    force: bool,
+}
+
+#[derive(Debug, Args)]
+struct FootprintsBundleArgs {
+    #[arg(long, help = "KiCad footprint library version")]
+    version: Option<String>,
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Override the footprint cache directory"
+    )]
+    cache_dir: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "FILE",
+        help = "Output .tar.zst bundle; defaults to kicad-footprints-<version>.tar.zst"
+    )]
+    out: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -333,22 +487,49 @@ struct FootprintsFetchArgs {
     cache_dir: Option<PathBuf>,
 }
 
-fn main() -> via_core::Result<()> {
+fn main() {
     let cli = Cli::parse();
+    let color = cli.color;
 
+    if let Err(err) = run(cli) {
+        let mut stderr = std::io::stderr();
+        if let Err(render_err) = diagnostics::write_error(&err, color, &mut stderr) {
+            eprintln!("failed to render error: {render_err}");
+            eprintln!("{err}");
+        }
+        std::process::exit(1);
+    }
+}
+
+fn run(cli: Cli) -> via_core::Result<()> {
+    let color = cli.color;
     match cli.command {
         Some(Command::Init(args)) => init::run(args),
         Some(Command::Ir(args)) => ir_command(cli.project, args),
-        Some(Command::Check(args)) => check_command(cli.project, args),
+        Some(Command::Check(args)) => check_command(cli.project, args, color),
+        Some(Command::Doctor(args)) => doctor::run(cli.project, args),
+        Some(Command::Explain(args)) => explain_command(args),
         Some(Command::Snapshot(args)) => snapshot_command(cli.project, args),
+        Some(Command::Inspect { target }) => match target {
+            InspectTarget::Summary(args) => inspection::show(cli.project, args),
+            InspectTarget::Designs => designs_command(cli.project),
+            InspectTarget::Nets(args) => inspection::nets(cli.project, args),
+            InspectTarget::Bom(args) => bom_command(cli.project, args),
+        },
+        Some(Command::Show(args)) => inspection::show(cli.project, args),
+        Some(Command::Nets(args)) => inspection::nets(cli.project, args),
         Some(Command::Designs) => designs_command(cli.project),
         Some(Command::Bom(args)) => bom_command(cli.project, args),
         Some(Command::Footprints { target }) => match target {
             FootprintsTarget::Status(args) => footprints_status_command(cli.project, args),
+            FootprintsTarget::Install(args) => footprints_install_command(cli.project, args),
             FootprintsTarget::Import(args) => footprints_import_command(cli.project, args),
+            FootprintsTarget::Bundle(args) => footprints_bundle_command(cli.project, args),
             FootprintsTarget::Fetch(args) => footprints_fetch_command(cli.project, args),
         },
         Some(Command::Export { target }) => match target {
+            ExportTarget::Ir(args) => ir_command(cli.project, args),
+            ExportTarget::Snapshot(args) => snapshot_command(cli.project, args),
             ExportTarget::Kicad(args) => export_kicad_command(cli.project, args),
             ExportTarget::LcedaPro(args) => export_lceda_command(cli.project, args),
             ExportTarget::Pcb(args) => export_pcb_command(cli.project, args),
@@ -395,40 +576,63 @@ fn snapshot_command(project_path: Option<PathBuf>, args: SnapshotArgs) -> via_co
     Ok(())
 }
 
-fn check_command(project_path: Option<PathBuf>, args: CheckArgs) -> via_core::Result<()> {
-    let production = args.production;
+fn check_command(
+    project_path: Option<PathBuf>,
+    args: CheckArgs,
+    color: ColorChoice,
+) -> via_core::Result<()> {
+    let profile = args.profile();
+    let json = args.json();
     let (_, board) = load_board(project_path, args.design)?;
     let loaded = board.footprints().count();
-    let diagnostics = if production {
-        board.production_diagnostics()
-    } else {
-        board.diagnostics()
-    };
+    let report = board.validation_report(profile);
+    let diagnostics = report.diagnostics();
 
-    if args.json {
+    if json {
         println!(
             "{}",
-            json::check_summary(board.name(), diagnostics.is_empty(), loaded, &diagnostics)
+            json::check_summary(board.name(), !report.has_errors(), loaded, diagnostics)
         );
     }
 
-    if diagnostics.is_empty() {
-        if !args.json {
-            println!(
-                "{} {}ok; embedded {loaded} footprint pad maps",
-                board.name(),
-                if production { "production " } else { "" },
-            );
-        }
-        Ok(())
-    } else {
-        if !args.json {
-            for diagnostic in &diagnostics {
-                eprintln!("{diagnostic}");
-            }
-        }
-        std::process::exit(1);
+    if report.has_errors() {
+        return Err(via_core::Error::Validation(diagnostics.to_vec()));
     }
+
+    if !json {
+        if !report.is_clean() {
+            let mut stderr = std::io::stderr();
+            diagnostics::write_diagnostics(diagnostics, color, &mut stderr)?;
+        }
+        let profile_label = match profile {
+            via_core::ValidationProfile::Draft => "draft",
+            via_core::ValidationProfile::Prototype => "prototype",
+            via_core::ValidationProfile::Production => "production",
+        };
+        println!(
+            "{} {profile_label} ok; embedded {loaded} footprint pad maps",
+            board.name(),
+        );
+    }
+    Ok(())
+}
+
+fn explain_command(args: ExplainArgs) -> via_core::Result<()> {
+    if args.list {
+        print!("{}", diagnostics::explain_list_text());
+        return Ok(());
+    }
+
+    let code = args
+        .code
+        .expect("clap requires CODE unless --list is present");
+    let Some(definition) = via_core::diagnostic_definition(&code) else {
+        return Err(via_core::Error::Diagnostic(Box::new(
+            diagnostics::unknown_code_diagnostic(&code),
+        )));
+    };
+    print!("{}", diagnostics::explain_text(definition));
+    Ok(())
 }
 
 fn designs_command(project_path: Option<PathBuf>) -> via_core::Result<()> {
@@ -462,12 +666,20 @@ fn footprints_status_command(
     let version = resolve_footprint_version(project_path.as_ref(), args.version)?;
     if let Some(cache_dir) = args.cache_dir {
         match via_kicad_footprints::FootprintCache::open_at(&version, &cache_dir) {
-            Ok(cache) => {
-                println!("version: {}", cache.version());
-                println!("cache: {}", cache.root().display());
-                println!("manifest: present");
-                println!("footprints: {}", cache.manifest().footprints.len());
-            }
+            Ok(cache) => match cache.validate_all() {
+                Ok(count) => {
+                    println!("version: {}", cache.version());
+                    println!("cache: {}", cache.root().display());
+                    println!("manifest: present");
+                    println!("footprints: {count}");
+                }
+                Err(err) => {
+                    println!("version: {}", cache.version());
+                    println!("cache: {}", cache.root().display());
+                    println!("manifest: invalid ({err})");
+                    println!("footprints: {}", cache.manifest().footprints.len());
+                }
+            },
             Err(err) => {
                 println!("version: {version}");
                 println!("cache: {}", cache_dir.display());
@@ -483,13 +695,18 @@ fn footprints_status_command(
     println!("cache: {}", status.root.display());
     println!(
         "manifest: {}",
-        if status.manifest_exists {
+        if status.is_ready() {
             "present"
+        } else if status.manifest_exists {
+            "invalid"
         } else {
             "missing"
         }
     );
     println!("footprints: {}", status.footprint_count);
+    if let Some(reason) = status.validation_error {
+        println!("reason: {reason}");
+    }
     Ok(())
 }
 
@@ -499,10 +716,15 @@ fn footprints_import_command(
 ) -> via_core::Result<()> {
     let version = resolve_footprint_version(project_path.as_ref(), args.version)?;
     let cache_dir = args.cache_dir.clone();
-    let root = cache_dir
-        .clone()
-        .unwrap_or_else(|| via_kicad_footprints::cache_dir_for_version(&version));
-    let manifest = via_kicad_footprints::import_from_kicad_dir(&args.from, &version, cache_dir)
+    let root = resolve_footprint_cache_dir(cache_dir.clone(), &version)?;
+    let mut options = via_kicad_footprints::ImportOptions::new(&args.from, &version);
+    if let Some(cache_dir) = cache_dir {
+        options = options.cache_dir(cache_dir);
+    }
+    if let Some(upstream_source) = args.upstream_source {
+        options = options.upstream_source(upstream_source);
+    }
+    let manifest = via_kicad_footprints::import(options)
         .map_err(|err| via_core::Error::Io(err.to_string()))?;
     println!(
         "imported {} KiCad footprints for version {} into {}",
@@ -513,33 +735,73 @@ fn footprints_import_command(
     Ok(())
 }
 
+fn footprints_install_command(
+    project_path: Option<PathBuf>,
+    args: FootprintsInstallArgs,
+) -> via_core::Result<()> {
+    let version = resolve_footprint_version(project_path.as_ref(), args.version)?;
+    let cache_dir = args.cache_dir.clone();
+    let root = resolve_footprint_cache_dir(cache_dir.clone(), &version)?;
+    if !args.force
+        && let Ok(cache) = via_kicad_footprints::FootprintCache::open_at(&version, &root)
+        && let Ok(count) = cache.validate_all()
+    {
+        println!(
+            "KiCad footprint cache {version} already installed at {} ({count} footprints)",
+            root.display()
+        );
+        return Ok(());
+    }
+
+    let url = resolve_footprint_bundle_url(project_path.as_ref(), args.url, &version)?;
+    let manifest = via_kicad_footprints::fetch_from_url(&url, &version, cache_dir)
+        .map_err(|err| via_core::Error::Io(err.to_string()))?;
+    println!(
+        "installed {} KiCad footprints for version {} into {}",
+        manifest.footprints.len(),
+        manifest.version,
+        root.display()
+    );
+    println!("source: {url}");
+    Ok(())
+}
+
+fn footprints_bundle_command(
+    project_path: Option<PathBuf>,
+    args: FootprintsBundleArgs,
+) -> via_core::Result<()> {
+    let version = resolve_footprint_version(project_path.as_ref(), args.version)?;
+    let output = args
+        .out
+        .unwrap_or_else(|| PathBuf::from(via_kicad_footprints::cache_bundle_file_name(&version)));
+    let mut options = via_kicad_footprints::BundleOptions::new(&version, &output);
+    if let Some(cache_dir) = args.cache_dir {
+        options = options.cache_dir(cache_dir);
+    }
+    let report = via_kicad_footprints::bundle(options)
+        .map_err(|err| via_core::Error::Io(err.to_string()))?;
+    println!(
+        "bundled {} KiCad footprints for version {} from {} into {}",
+        report.footprint_count,
+        report.version,
+        report.root.display(),
+        report.output.display()
+    );
+    println!(
+        "release tag: {}",
+        via_kicad_footprints::cache_bundle_release_tag(&version)
+    );
+    Ok(())
+}
+
 fn footprints_fetch_command(
     project_path: Option<PathBuf>,
     args: FootprintsFetchArgs,
 ) -> via_core::Result<()> {
     let version = resolve_footprint_version(project_path.as_ref(), args.version)?;
-    let project_url = match project_path.as_ref() {
-        Some(path) => via_project::Project::discover(Some(path.clone()))
-            .ok()
-            .and_then(|project| project.kicad_footprints_url().map(str::to_owned)),
-        None => via_project::Project::discover(None)
-            .ok()
-            .and_then(|project| project.kicad_footprints_url().map(str::to_owned)),
-    };
-    let url = args
-        .url
-        .or(project_url)
-        .or_else(|| std::env::var(via_kicad_footprints::VIA_KICAD_FOOTPRINTS_URL_ENV).ok())
-        .ok_or_else(|| {
-            via_core::Error::Io(format!(
-                "footprints fetch requires --url, [kicad-footprints].url, or {}",
-                via_kicad_footprints::VIA_KICAD_FOOTPRINTS_URL_ENV
-            ))
-        })?;
+    let url = resolve_footprint_bundle_url(project_path.as_ref(), args.url, &version)?;
     let cache_dir = args.cache_dir.clone();
-    let root = cache_dir
-        .clone()
-        .unwrap_or_else(|| via_kicad_footprints::cache_dir_for_version(&version));
+    let root = resolve_footprint_cache_dir(cache_dir.clone(), &version)?;
     let manifest = via_kicad_footprints::fetch_from_url(&url, &version, cache_dir)
         .map_err(|err| via_core::Error::Io(err.to_string()))?;
     println!(
@@ -558,12 +820,14 @@ fn export_kicad_command(
     let project = via_project::Project::discover(project_path)?;
     let (_, board) = project.build_design(args.design.as_deref())?;
     let out = project.kicad_output_dir(args.out)?;
-    let project_name = project.kicad_project_name(&board);
+    let project_name = project.kicad_project_name(&board)?;
     let footprint_cache_version = footprint_version_for_project(&project);
     let footprint_export = if args.no_footprints {
         None
     } else {
         Some(project.kicad_footprint_export(
+            &out,
+            &project_name,
             args.footprint_library_name,
             args.footprint_library_path,
             args.footprint_output_dir,
@@ -635,13 +899,18 @@ fn export_pcb_command(project_path: Option<PathBuf>, args: ExportPcbArgs) -> via
     let layout = args
         .layout
         .map(|path| project.resolve_path(path))
-        .ok_or_else(|| via_core::Error::Io("export pcb requires --layout".to_owned()))?;
+        .ok_or_else(|| {
+            via_core::Error::diagnostic("export.pcb.missing_layout", "export pcb requires --layout")
+        })?;
     let out = args
         .out
         .map(|path| project.resolve_path(path))
-        .ok_or_else(|| via_core::Error::Io("export pcb requires --out".to_owned()))?;
+        .ok_or_else(|| {
+            via_core::Error::diagnostic("export.pcb.missing_output", "export pcb requires --out")
+        })?;
+    let project_name = project.kicad_project_name(&board)?;
     let footprint_library_name =
-        project.kicad_footprint_library_name(args.footprint_library_name)?;
+        project.kicad_footprint_library_name(args.footprint_library_name, &project_name)?;
     let footprint_cache_version = footprint_version_for_project(&project);
     let official_footprints =
         kicad_export::load_required_official_footprint_texts(&board, &footprint_cache_version)?;
@@ -681,19 +950,68 @@ fn resolve_footprint_version(
     project_path: Option<&PathBuf>,
     override_version: Option<String>,
 ) -> via_core::Result<String> {
-    if let Some(version) = override_version {
-        return Ok(version);
+    let version = if let Some(version) = override_version {
+        version
+    } else {
+        let project = optional_project(project_path)?;
+        project
+            .as_ref()
+            .and_then(|project| project.kicad_footprints_version())
+            .unwrap_or(via_kicad_footprints::DEFAULT_KICAD_FOOTPRINTS_VERSION)
+            .to_owned()
+    };
+    via_kicad_footprints::validate_cache_version(&version)
+        .map_err(|err| via_core::Error::Io(err.to_string()))?;
+    Ok(version)
+}
+
+fn resolve_footprint_cache_dir(
+    cache_dir: Option<PathBuf>,
+    version: &str,
+) -> via_core::Result<PathBuf> {
+    match cache_dir {
+        Some(cache_dir) => Ok(cache_dir),
+        None => via_kicad_footprints::cache_dir_for_version(version)
+            .map_err(|err| via_core::Error::Io(err.to_string())),
+    }
+}
+
+fn resolve_footprint_bundle_url(
+    project_path: Option<&PathBuf>,
+    override_url: Option<String>,
+    version: &str,
+) -> via_core::Result<String> {
+    if let Some(url) = override_url {
+        return Ok(url);
     }
 
-    let project = match project_path {
-        Some(path) => via_project::Project::discover(Some(path.clone())).ok(),
-        None => via_project::Project::discover(None).ok(),
-    };
-    Ok(project
-        .as_ref()
-        .and_then(|project| project.kicad_footprints_version())
-        .unwrap_or(via_kicad_footprints::DEFAULT_KICAD_FOOTPRINTS_VERSION)
-        .to_owned())
+    if let Ok(url) = std::env::var(via_kicad_footprints::VIA_KICAD_FOOTPRINTS_URL_ENV)
+        && !url.trim().is_empty()
+    {
+        return Ok(url);
+    }
+
+    if let Some(project) = optional_project(project_path)? {
+        if let Some(url) = project.kicad_footprints_url() {
+            return Ok(url.to_owned());
+        }
+        if let Some(source) = project.kicad_footprints_legacy_source()
+            && source != "github-release"
+        {
+            return Ok(source.to_owned());
+        }
+    }
+
+    Ok(via_kicad_footprints::default_cache_bundle_url(version))
+}
+
+fn optional_project(
+    project_path: Option<&PathBuf>,
+) -> via_core::Result<Option<via_project::Project>> {
+    match project_path {
+        Some(path) => via_project::Project::discover(Some(path.clone())).map(Some),
+        None => Ok(via_project::Project::discover(None).ok()),
+    }
 }
 
 #[cfg(test)]
@@ -710,14 +1028,14 @@ mod cli_tests {
     fn top_level_help_lists_current_commands() {
         let help = help_for(Cli::command());
 
-        for command in ["init", "ir", "check", "snapshot", "export", "footprints"] {
+        for command in ["init", "check", "doctor", "inspect", "export", "footprints"] {
             assert!(
                 help.contains(command),
                 "expected top-level help to contain {command:?}:\n{help}"
             );
         }
 
-        for removed in ["check-production", "inspect", "build"] {
+        for removed in ["check-production", "build"] {
             assert!(
                 !help.contains(removed),
                 "expected top-level help not to contain removed command {removed:?}:\n{help}"
@@ -726,12 +1044,14 @@ mod cli_tests {
     }
 
     #[test]
-    fn check_help_exposes_production_flag() {
+    fn check_help_exposes_profile_and_machine_format() {
         let mut command = Cli::command();
         let check = command.find_subcommand_mut("check").unwrap().clone();
         let help = help_for(check);
 
-        assert!(help.contains("--production"), "{help}");
+        assert!(help.contains("--profile"), "{help}");
+        assert!(help.contains("--format"), "{help}");
+        assert!(!help.contains("--production"), "{help}");
     }
 
     #[test]
@@ -743,6 +1063,28 @@ mod cli_tests {
         assert!(help.contains("lceda-pro"), "{help}");
         assert!(help.contains("EXPERIMENTAL"), "{help}");
         assert!(!help.contains("lceda "), "{help}");
+    }
+
+    #[test]
+    fn footprints_help_exposes_user_install_workflow_only() {
+        let mut command = Cli::command();
+        let footprints = command.find_subcommand_mut("footprints").unwrap().clone();
+        let help = help_for(footprints);
+
+        assert!(help.contains("install"), "{help}");
+        assert!(help.contains("import"), "{help}");
+        assert!(!help.contains("bundle"), "{help}");
+        assert!(!help.contains("fetch"), "{help}");
+    }
+
+    #[test]
+    fn default_footprint_install_url_is_versioned_github_release_asset() {
+        let url = resolve_footprint_bundle_url(None, None, "10.0.4").unwrap();
+
+        assert_eq!(
+            url,
+            "https://github.com/jz315/via-rs/releases/download/kicad-footprints-10.0.4/kicad-footprints-10.0.4.tar.zst"
+        );
     }
 }
 

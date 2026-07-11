@@ -2,6 +2,7 @@
 name = "via-examples"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Example and project boards built on the via library crates."
 repository.workspace = true
 homepage.workspace = true
@@ -12,5 +13,5 @@ keywords.workspace = true
 publish = false
 
 [dependencies]
-via = { package = "via-pcb", version = "=0.1.1", path = "../via" }
-via-core = { version = "=0.1.1", path = "../via-core" }
+via = { package = "via-pcb", version = "=0.3.0", path = "../via" }
+via-core = { version = "=0.3.0", path = "../via-core" }

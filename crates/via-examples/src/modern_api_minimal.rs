@@ -5,8 +5,8 @@ pub fn modern_api_minimal_board() -> Result<Board> {
         .rules(Rules::new())
         .units(Unit::Mm);
 
-    let signal = d.signal("SIGNAL", "3V3");
-    let v3v3 = d.rail("3V3").dc(3.3);
+    let signal = d.logic("SIGNAL", "3V3");
+    let v3v3 = d.power("3V3", 3.3);
     let ground = d.ground("GND");
 
     let input = d.add(
@@ -30,8 +30,7 @@ pub fn modern_api_minimal_board() -> Result<Board> {
     d.connect(&v3v3, [input.pin("3V3"), load.pin("VCC")]);
     d.connect(&ground, [input.pin("GND"), load.pin("GND")]);
 
-    d.check(CheckProfile::Prototype)?;
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 
 #[cfg(test)]

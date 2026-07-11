@@ -2,10 +2,9 @@ mod model;
 mod render;
 mod util;
 
-use std::fs;
 use std::path::Path;
 
-use via_core::{Board, Result};
+use via_core::{Board, Result, atomic_write};
 
 use model::{pin_net_map, place_modules, symbol_templates};
 use render::{
@@ -25,6 +24,7 @@ const LABEL_STUB: f64 = 7.62;
 #[derive(Debug, Clone)]
 pub struct SchematicProjectOptions {
     pub symbol_library_name: String,
+    pub project_name: Option<String>,
     pub footprint_library_name: Option<String>,
     pub footprint_library_uri: Option<String>,
 }
@@ -33,9 +33,15 @@ impl SchematicProjectOptions {
     pub fn new(symbol_library_name: impl Into<String>) -> Self {
         Self {
             symbol_library_name: symbol_library_name.into(),
+            project_name: None,
             footprint_library_name: None,
             footprint_library_uri: None,
         }
+    }
+
+    pub fn project_name(mut self, name: impl Into<String>) -> Self {
+        self.project_name = Some(name.into());
+        self
     }
 
     pub fn footprint_library(mut self, name: impl Into<String>, uri: impl Into<String>) -> Self {
@@ -59,9 +65,11 @@ pub fn write_schematic_project(
     board.check()?;
 
     let out_dir = out_dir.as_ref();
-    fs::create_dir_all(out_dir)?;
-
-    let stem = board.name();
+    let stem = options
+        .project_name
+        .as_deref()
+        .unwrap_or_else(|| board.name());
+    via_core::validate_file_stem(stem)?;
     let symbol_library_file = format!("{stem}.kicad_sym");
     let schematic_file = out_dir.join(format!("{stem}.kicad_sch"));
     let project_file = out_dir.join(format!("{stem}.kicad_pro"));
@@ -70,17 +78,17 @@ pub fn write_schematic_project(
     let placed = place_modules(board, &templates);
     let pin_nets = pin_net_map(board);
 
-    fs::write(
+    atomic_write(
         out_dir.join(&symbol_library_file),
         render_symbol_library(&templates),
     )?;
-    fs::write(
+    atomic_write(
         out_dir.join("sym-lib-table"),
         render_sym_lib_table(options, &symbol_library_file),
     )?;
-    fs::write(out_dir.join("fp-lib-table"), render_fp_lib_table(options))?;
-    fs::write(project_file, render_project_file(board))?;
-    fs::write(
+    atomic_write(out_dir.join("fp-lib-table"), render_fp_lib_table(options))?;
+    atomic_write(project_file, render_project_file(board, stem))?;
+    atomic_write(
         schematic_file,
         render_schematic(board, options, &templates, &placed, &pin_nets),
     )?;
@@ -95,10 +103,10 @@ mod tests {
     use crate::schematic::render::render_pin_connection;
     use crate::schematic::util::stable_uuid;
     use std::collections::BTreeMap;
+    use std::process::Command;
     use via_core::{Design, SymbolSide, model::Part};
 
-    #[test]
-    fn writes_openable_project_files() {
+    fn test_board() -> Board {
         let mut design = Design::new("demo");
         let u1 = design
             .add(
@@ -126,7 +134,12 @@ mod tests {
             .rules_mut()
             .set_default_track_width_mm(0.42)
             .set_clearance_mm(0.23);
-        let board = design.build().unwrap();
+        design.build().unwrap()
+    }
+
+    #[test]
+    fn writes_openable_project_files() {
+        let board = test_board();
 
         let out = std::env::temp_dir().join(format!("via_sch_test_{}", stable_uuid("demo")));
         let options = SchematicProjectOptions::new("DEMO")
@@ -146,6 +159,79 @@ mod tests {
         assert!(out.join("fp-lib-table").exists());
 
         let _ = std::fs::remove_dir_all(out);
+    }
+
+    #[test]
+    #[ignore = "requires VIA_KICAD_CLI pointing to a real KiCad CLI executable"]
+    fn kicad_cli_accepts_generated_schematic() {
+        let kicad_cli = std::env::var_os("VIA_KICAD_CLI")
+            .expect("set VIA_KICAD_CLI to the KiCad CLI executable");
+        let board = test_board();
+        let out = std::env::temp_dir().join(format!(
+            "via_kicad_cli_test_{}",
+            stable_uuid("kicad-cli-smoke")
+        ));
+        let _ = std::fs::remove_dir_all(&out);
+        let options = SchematicProjectOptions::new("DEMO")
+            .footprint_library("demo_footprints", "${KIPRJMOD}/demo.pretty");
+        write_schematic_project(&board, &out, &options).unwrap();
+
+        let schematic = out.join("demo.kicad_sch");
+        let netlist = out.join("demo.net");
+        let output = Command::new(kicad_cli)
+            .args(["sch", "export", "netlist", "--output"])
+            .arg(&netlist)
+            .arg(&schematic)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "stdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(netlist.is_file());
+        std::fs::remove_dir_all(out).unwrap();
+    }
+
+    #[test]
+    fn configured_project_name_controls_all_schematic_file_stems() {
+        let board = Design::new("board_name").into_unchecked_board();
+        let out = std::env::temp_dir().join(format!(
+            "via_sch_project_name_{}",
+            stable_uuid("configured-project-name")
+        ));
+        let options = SchematicProjectOptions::new("SYMBOLS").project_name("configured_name");
+
+        write_schematic_project(&board, &out, &options).unwrap();
+
+        assert!(out.join("configured_name.kicad_sch").is_file());
+        assert!(out.join("configured_name.kicad_pro").is_file());
+        assert!(out.join("configured_name.kicad_sym").is_file());
+        assert!(!out.join("board_name.kicad_sch").exists());
+        let project = std::fs::read_to_string(out.join("configured_name.kicad_pro")).unwrap();
+        assert!(project.contains("\"filename\": \"configured_name.kicad_pro\""));
+
+        let _ = std::fs::remove_dir_all(out);
+    }
+
+    #[test]
+    fn rejects_project_names_that_escape_the_output_directory() {
+        let board = Design::new("board_name").into_unchecked_board();
+        let out = std::env::temp_dir().join(format!(
+            "via_sch_unsafe_name_{}",
+            stable_uuid("unsafe-project-name")
+        ));
+        let _ = std::fs::remove_dir_all(&out);
+        let options = SchematicProjectOptions::new("SYMBOLS").project_name("../escape");
+
+        let err = write_schematic_project(&board, &out, &options).unwrap_err();
+
+        let via_core::Error::Diagnostic(diagnostic) = err else {
+            panic!("expected a diagnostic error");
+        };
+        assert_eq!(diagnostic.code(), Some("export.invalid_file_stem"));
+        assert!(!out.exists());
     }
 
     #[test]

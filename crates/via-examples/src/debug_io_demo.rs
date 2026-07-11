@@ -3,18 +3,18 @@ use via::prelude::*;
 pub fn debug_io_demo_board() -> Result<Board> {
     let mut design = Design::new("debug_io_demo").units(Unit::Mm);
 
-    let vin = design.rail("5V_IN").dc(5.0);
-    let v3v3 = design.rail("3V3").dc(3.3);
+    let vin = design.power("5V_IN", 5.0);
+    let v3v3 = design.power("3V3", 3.3);
     let ground = design.ground("GND");
-    let i2c_scl = design.signal("I2C_SCL", "3V3");
-    let i2c_sda = design.signal("I2C_SDA", "3V3");
-    let gpio_a = design.signal("GPIO_A", "3V3");
-    let gpio_b = design.signal("GPIO_B", "3V3");
-    let led_node = design.signal("LED_STATUS", "3V3");
-    let bus_b1 = design.signal("BUS_B1", "3V3");
-    let bus_b2 = design.signal("BUS_B2", "3V3");
-    let bus_b3 = design.signal("BUS_B3", "3V3");
-    let bus_b4 = design.signal("BUS_B4", "3V3");
+    let i2c_scl = design.logic("I2C_SCL", "3V3");
+    let i2c_sda = design.logic("I2C_SDA", "3V3");
+    let gpio_a = design.logic("GPIO_A", "3V3");
+    let gpio_b = design.logic("GPIO_B", "3V3");
+    let led_node = design.logic("LED_STATUS", "3V3");
+    let bus_b1 = design.logic("BUS_B1", "3V3");
+    let bus_b2 = design.logic("BUS_B2", "3V3");
+    let bus_b3 = design.logic("BUS_B3", "3V3");
+    let bus_b4 = design.logic("BUS_B4", "3V3");
 
     let power_in = design.add(
         part("J1", "JST-PH 5V input")
@@ -254,7 +254,7 @@ pub fn debug_io_demo_board() -> Result<Board> {
     design.connect(&bus_b3, [aux_header.pin("9"), bus_buffer.pin("B3")]);
     design.connect(&bus_b4, [aux_header.pin("10"), bus_buffer.pin("B4")]);
 
-    design.finish()
+    design.finish(ValidationProfile::Prototype)
 }
 
 fn testpad(

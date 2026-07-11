@@ -1,8 +1,7 @@
-use std::fs;
 use std::io;
 use std::path::Path;
 
-use via_core::Board;
+use via_core::{Board, atomic_write};
 
 use crate::archive::ZipArchive;
 use crate::context::ExportContext;
@@ -23,10 +22,6 @@ pub fn write_lceda_pro_project(board: &Board, path: impl AsRef<Path>) -> io::Res
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
 
     let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
     let title = board.name();
     let ctx = ExportContext::new(board);
     validate_lceda_export(&ctx).map_err(|error| {
@@ -46,7 +41,7 @@ pub fn write_lceda_pro_project(board: &Board, path: impl AsRef<Path>) -> io::Res
         format!("{title}.epru"),
         render_epru_with_context(&ctx).into_bytes(),
     );
-    fs::write(path, archive.finish()?)
+    atomic_write(path, archive.finish()?).map_err(|err| io::Error::other(err.to_string()))
 }
 
 #[cfg(test)]

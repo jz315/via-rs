@@ -15,9 +15,9 @@ use via::prelude::*;
 pub fn board() -> Result<Board> {
     let mut d = Design::new("lesson_01").units(Unit::Mm);
 
-    let v3v3 = d.rail("3V3").dc(3.3);
+    let v3v3 = d.power("3V3", 3.3);
     let gnd = d.ground("GND");
-    let sig = d.signal("SIG", "3V3");
+    let sig = d.logic("SIG", "3V3");
 
     let j1 = d.add(
         part("J1", "Input connector")
@@ -41,7 +41,7 @@ pub fn board() -> Result<Board> {
     d.connect(&v3v3, [j1.pin("3V3"), u1.pin("VCC")]);
     d.connect(&gnd, [j1.pin("GND"), u1.pin("GND")]);
 
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 ```
 
@@ -188,14 +188,14 @@ belong in downstream part crates.
 During authoring, use:
 
 ```rust
-d.check(CheckProfile::Prototype)?;
+d.validate(ValidationProfile::Prototype).into_result()?;
 ```
 
 Before using exported artifacts for real manufacturing work, use the stricter
 production profile:
 
 ```rust
-d.check(CheckProfile::Production)?;
+d.validate(ValidationProfile::Production).into_result()?;
 ```
 
 Prototype checks answer: "Is the design structurally coherent?"
@@ -213,6 +213,8 @@ prints stable `BoardIr` JSON to stdout. Replace the placeholder values below in
 your project.
 
 ```toml
+schema = 1
+
 [project]
 name = "<project-name>"
 version = "<project-version>"
@@ -222,13 +224,24 @@ default-design = "<design-name>"
 provider = "cargo"
 package = "<provider-package>"
 command = "<provider-command>"
+timeout-seconds = 120
+max-output-bytes = 8388608
 
 [outputs.kicad]
 dir = "<kicad-output-dir>"
-project = "<kicad-project-name>"
-footprint-library-name = "<kicad-footprint-library-name>"
-footprint-library-path = "<kicad-footprint-library-path>"
-footprint-output-dir = "<generated-footprint-output-dir>"
+project-name = "<kicad-project-name>"
+```
+
+The provider is terminated after 120 seconds by default, and each captured
+output stream is limited to 8 MiB. Override these fields for unusually large or
+slow designs. Keep logs on stderr because stdout is reserved for Board IR JSON.
+The generated footprint library uses a `${KIPRJMOD}` URI and is written below
+the KiCad output directory unless `footprint-output-dir` is set explicitly.
+If your design references official KiCad footprints through cache-backed
+metadata, install the matching cache once with:
+
+```powershell
+via footprints install --version 10.0.4
 ```
 
 The provider binary can stay tiny:
@@ -247,11 +260,15 @@ Then run the project workflow:
 ```powershell
 cargo install via-pcb-cli
 via init <project-dir>
-via ir <design-name> --out <board-ir-json>
-via check <design-name>
-via check <design-name> --production
-via snapshot <design-name> --out <snapshot-json>
-via bom <design-name> --format csv --out <bom-csv>
+via doctor
+via inspect summary
+via inspect nets
+via inspect nets --json
+via export ir <design-name> --out <board-ir-json>
+via check <design-name> --profile prototype
+via check <design-name> --profile production
+via export snapshot <design-name> --out <snapshot-json>
+via inspect bom <design-name> --format csv --out <bom-csv>
 via export kicad <design-name>
 ```
 

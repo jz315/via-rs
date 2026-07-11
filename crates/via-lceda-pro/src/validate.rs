@@ -123,14 +123,15 @@ fn validate_footprint_geometry(ctx: &ExportContext<'_>, diagnostics: &mut Vec<St
         }
 
         for pad in ir.pads() {
-            if let Some(drill) = pad.drill {
-                if !drill.is_round() && pad.shape != PadShape::Oval {
-                    diagnostics.push(format!(
-                        "footprint {} pad {} uses a slotted drill but is not an oval pad",
-                        footprint.name(),
-                        pad.number
-                    ));
-                }
+            if let Some(drill) = pad.drill
+                && !drill.is_round()
+                && pad.shape != PadShape::Oval
+            {
+                diagnostics.push(format!(
+                    "footprint {} pad {} uses a slotted drill but is not an oval pad",
+                    footprint.name(),
+                    pad.number
+                ));
             }
         }
     }

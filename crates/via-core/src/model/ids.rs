@@ -5,6 +5,12 @@ pub struct ModuleId {
     pub(crate) refdes: String,
 }
 
+/// Preferred name for a board component identifier.
+///
+/// The historical `ModuleId` spelling remains available for source
+/// compatibility.
+pub type PartId = ModuleId;
+
 impl ModuleId {
     pub(crate) fn new(refdes: impl Into<String>) -> Self {
         Self {

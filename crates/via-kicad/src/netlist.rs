@@ -1,7 +1,6 @@
-use std::fs;
 use std::path::Path;
 
-use via_core::{Board, Result};
+use via_core::{Board, Result, atomic_write};
 
 pub fn write_netlist(board: &Board, path: impl AsRef<Path>) -> Result<()> {
     board.check()?;
@@ -53,11 +52,7 @@ pub fn write_netlist(board: &Board, path: impl AsRef<Path>) -> Result<()> {
     out.push_str("  )\n");
     out.push_str(")\n");
 
-    if let Some(parent) = path.as_ref().parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, out)?;
-    Ok(())
+    atomic_write(path, out)
 }
 
 fn escape(value: &str) -> String {

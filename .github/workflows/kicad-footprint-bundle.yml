@@ -1,0 +1,105 @@
+name: KiCad Footprint Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: KiCad footprint library version tag
+        required: true
+        default: 10.0.4
+      force:
+        description: Replace an existing release asset
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      FORCE: ${{ inputs.force }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: kicad-footprint-bundle
+
+      - name: Validate footprint version
+        run: |
+          if [[ ! "${VERSION}" =~ ^[A-Za-z0-9._+-]+$ ]] || [[ "${VERSION}" == "." ]] || [[ "${VERSION}" == ".." ]]; then
+            echo "unsafe KiCad footprint version: ${VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Download official KiCad footprints
+        run: |
+          set -euo pipefail
+          archive="target/kicad-footprints-${VERSION}.tar.gz"
+          source_dir="target/kicad-footprints-src"
+          mkdir -p "${source_dir}"
+          curl --fail --location \
+            --output "${archive}" \
+            "https://gitlab.com/kicad/libraries/kicad-footprints/-/archive/${VERSION}/kicad-footprints-${VERSION}.tar.gz"
+          tar -xzf "${archive}" -C "${source_dir}"
+
+      - name: Import and bundle cache
+        run: |
+          set -euo pipefail
+          upstream_url="https://gitlab.com/kicad/libraries/kicad-footprints/-/archive/${VERSION}/kicad-footprints-${VERSION}.tar.gz"
+          source_dir="target/kicad-footprints-src/kicad-footprints-${VERSION}"
+          cache_dir="target/via-kicad-footprints/${VERSION}"
+          bundle="target/kicad-footprints-${VERSION}.tar.zst"
+          cargo run -p via-pcb-cli -- footprints import \
+            --version "${VERSION}" \
+            --from "${source_dir}" \
+            --upstream-source "${upstream_url}" \
+            --cache-dir "${cache_dir}"
+          cargo run -p xtask -- footprints bundle \
+            --version "${VERSION}" \
+            --cache-dir "${cache_dir}" \
+            --out "${bundle}"
+          cargo run -p via-pcb-cli -- footprints status \
+            --version "${VERSION}" \
+            --cache-dir "${cache_dir}"
+
+      - name: Upload GitHub Release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="kicad-footprints-${VERSION}"
+          bundle="target/kicad-footprints-${VERSION}.tar.zst"
+          checksum="${bundle}.sha256"
+          notes="target/kicad-footprints-${VERSION}-release-notes.md"
+          {
+            echo "KiCad official footprint cache bundle for ${VERSION}."
+            echo
+            echo "Built from https://gitlab.com/kicad/libraries/kicad-footprints/-/tree/${VERSION}"
+            echo
+            echo "The attached .sha256 file verifies the exact release bundle."
+            echo
+            echo "Install with:"
+            echo
+            echo '```powershell'
+            echo "via footprints install --version ${VERSION}"
+            echo '```'
+          } > "${notes}"
+
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" \
+              --title "KiCad footprints ${VERSION}" \
+              --notes-file "${notes}"
+          fi
+
+          if [ "${FORCE}" = "true" ]; then
+            gh release upload "${tag}" "${bundle}" "${checksum}" --clobber
+          else
+            gh release upload "${tag}" "${bundle}" "${checksum}"
+          fi

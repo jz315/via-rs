@@ -4,6 +4,7 @@ use crate::footprint::FootprintPads;
 use crate::model::{Board, ModuleId, Net, Part, PinRef};
 use crate::rules::BoardRules;
 use crate::spec::{BoardSpec, Component, DecouplerPins};
+use crate::{ValidationProfile, ValidationReport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unit {
@@ -38,12 +39,17 @@ impl Voltage {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckProfile {
-    Draft,
-    Prototype,
-    Production,
+impl From<f64> for Voltage {
+    fn from(volts: f64) -> Self {
+        Self::dc(volts)
+    }
 }
+
+/// Backwards-compatible name for [`ValidationProfile`].
+///
+/// New code should use `ValidationProfile`, which communicates that a profile
+/// controls both diagnostics and whether an operation may proceed.
+pub type CheckProfile = ValidationProfile;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Design {
@@ -109,8 +115,8 @@ impl Design {
         NetHandle::new(name, NetKind::Ground)
     }
 
-    pub fn power(&mut self, name: impl Into<String>, voltage: Voltage) -> NetHandle {
-        self.power_domain(name, voltage.domain())
+    pub fn power(&mut self, name: impl Into<String>, voltage: impl Into<Voltage>) -> NetHandle {
+        self.power_domain(name, voltage.into().domain())
     }
 
     pub fn power_domain(
@@ -137,11 +143,36 @@ impl Design {
         NetHandle::new(name, NetKind::MotorPhase)
     }
 
-    pub fn check(&self, profile: CheckProfile) -> Result<()> {
-        match profile {
-            CheckProfile::Draft | CheckProfile::Prototype => self.spec.board().check(),
-            CheckProfile::Production => self.spec.board().check_production(),
-        }
+    /// Connects pins to an existing logical net.
+    ///
+    /// Connection validity is reported by [`Self::validate`] or
+    /// [`Self::finish`], allowing authors to assemble a design incrementally.
+    pub fn connect<I>(&mut self, net: &NetHandle, pins: I) -> &mut Self
+    where
+        I: IntoIterator<Item = PinRef>,
+    {
+        net.connect_all(self, pins);
+        self
+    }
+
+    /// Creates or reuses a plain net and connects pins to it.
+    pub fn connect_named<I>(&mut self, name: impl Into<String>, pins: I) -> &mut Self
+    where
+        I: IntoIterator<Item = PinRef>,
+    {
+        self.net(name).connect_all(self, pins);
+        self
+    }
+
+    /// Validates the design without consuming it.
+    pub fn validate(&self, profile: ValidationProfile) -> ValidationReport {
+        self.spec.board().validation_report(profile)
+    }
+
+    /// Validates the design and returns an error only when the report contains
+    /// diagnostics with error severity.
+    pub fn check(&self, profile: ValidationProfile) -> Result<()> {
+        self.validate(profile).into_result()
     }
 
     pub fn board(&self) -> &Board {
@@ -154,6 +185,15 @@ impl Design {
 
     pub fn build(self) -> Result<Board> {
         self.spec.build()
+    }
+
+    /// Completes a design using the requested validation policy.
+    ///
+    /// This is the preferred completion API. It validates exactly once, then
+    /// returns the immutable board used by exporters and tests.
+    pub fn finish(self, profile: ValidationProfile) -> Result<Board> {
+        self.validate(profile).into_result()?;
+        Ok(self.spec.into_unchecked_board())
     }
 
     pub fn to_checked_board(&self) -> Result<Board> {
@@ -351,5 +391,20 @@ mod tests {
         net.connect_all(&mut design, [a.pin("1"), b.pin("1")]);
 
         assert_eq!(design.export(NamesExporter).unwrap(), "exportable:2:1");
+    }
+
+    #[test]
+    fn draft_finish_keeps_incomplete_nets_visible_as_warnings() {
+        let mut design = Design::new("draft");
+        design.net("UNFINISHED");
+
+        let report = design.validate(ValidationProfile::Draft);
+        assert!(!report.has_errors());
+        assert_eq!(report.warnings().count(), 1);
+        assert!(design.finish(ValidationProfile::Draft).is_ok());
+
+        let mut prototype = Design::new("prototype");
+        prototype.net("UNFINISHED");
+        assert!(prototype.finish(ValidationProfile::Prototype).is_err());
     }
 }

@@ -94,68 +94,68 @@ pub fn sot223() -> GeneratedFootprint {
 }
 
 pub fn soic8() -> GeneratedFootprint {
-    gullwing_ic(
-        "SOIC-8",
-        8,
-        1.27,
-        5.4,
-        Size::new(1.8, 0.6),
-        3.9,
-        4.9,
-        "soic8",
-    )
+    gullwing_ic(GullwingIcSpec {
+        name: "SOIC-8",
+        pins: 8,
+        pitch: 1.27,
+        row_x: 5.4,
+        pad_size: Size::new(1.8, 0.6),
+        body_width: 3.9,
+        body_length: 4.9,
+        generator: "soic8",
+    })
 }
 
 pub fn soic14() -> GeneratedFootprint {
-    gullwing_ic(
-        "SOIC-14",
-        14,
-        1.27,
-        5.4,
-        Size::new(1.8, 0.6),
-        3.9,
-        8.7,
-        "soic14",
-    )
+    gullwing_ic(GullwingIcSpec {
+        name: "SOIC-14",
+        pins: 14,
+        pitch: 1.27,
+        row_x: 5.4,
+        pad_size: Size::new(1.8, 0.6),
+        body_width: 3.9,
+        body_length: 8.7,
+        generator: "soic14",
+    })
 }
 
 pub fn soic16() -> GeneratedFootprint {
-    gullwing_ic(
-        "SOIC-16",
-        16,
-        1.27,
-        5.4,
-        Size::new(1.8, 0.6),
-        3.9,
-        9.9,
-        "soic16",
-    )
+    gullwing_ic(GullwingIcSpec {
+        name: "SOIC-16",
+        pins: 16,
+        pitch: 1.27,
+        row_x: 5.4,
+        pad_size: Size::new(1.8, 0.6),
+        body_width: 3.9,
+        body_length: 9.9,
+        generator: "soic16",
+    })
 }
 
 pub fn tssop16() -> GeneratedFootprint {
-    gullwing_ic(
-        "TSSOP-16",
-        16,
-        0.65,
-        4.5,
-        Size::new(1.45, 0.35),
-        4.4,
-        5.0,
-        "tssop16",
-    )
+    gullwing_ic(GullwingIcSpec {
+        name: "TSSOP-16",
+        pins: 16,
+        pitch: 0.65,
+        row_x: 4.5,
+        pad_size: Size::new(1.45, 0.35),
+        body_width: 4.4,
+        body_length: 5.0,
+        generator: "tssop16",
+    })
 }
 
 pub fn tssop20() -> GeneratedFootprint {
-    gullwing_ic(
-        "TSSOP-20",
-        20,
-        0.65,
-        4.5,
-        Size::new(1.45, 0.35),
-        4.4,
-        6.5,
-        "tssop20",
-    )
+    gullwing_ic(GullwingIcSpec {
+        name: "TSSOP-20",
+        pins: 20,
+        pitch: 0.65,
+        row_x: 4.5,
+        pad_size: Size::new(1.45, 0.35),
+        body_width: 4.4,
+        body_length: 6.5,
+        generator: "tssop20",
+    })
 }
 
 fn smd_led_2terminal(
@@ -294,16 +294,28 @@ fn sot23(name: &str, pins: usize) -> GeneratedFootprint {
     )
 }
 
-fn gullwing_ic(
-    name: &str,
+struct GullwingIcSpec {
+    name: &'static str,
     pins: usize,
     pitch: f64,
     row_x: f64,
     pad_size: Size,
     body_width: f64,
     body_length: f64,
-    generator: &str,
-) -> GeneratedFootprint {
+    generator: &'static str,
+}
+
+fn gullwing_ic(spec: GullwingIcSpec) -> GeneratedFootprint {
+    let GullwingIcSpec {
+        name,
+        pins,
+        pitch,
+        row_x,
+        pad_size,
+        body_width,
+        body_length,
+        generator,
+    } = spec;
     let mut footprint = FootprintIr::new(name)
         .description(format!("Generated {name} gullwing IC footprint"))
         .tag("via-generated")

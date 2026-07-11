@@ -2,6 +2,7 @@
 name = "via-kicad-sexp"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Small KiCad S-expression parser and renderer for via."
 repository.workspace = true
 homepage.workspace = true

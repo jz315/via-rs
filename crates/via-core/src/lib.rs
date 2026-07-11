@@ -1,24 +1,36 @@
+pub mod atomic_write;
 pub mod design;
+pub mod diagnostic_catalog;
 pub mod electrical;
 pub mod error;
 pub mod export;
+pub mod filename;
 pub mod footprint;
 pub mod ir;
 pub mod model;
 pub mod rules;
 mod spec;
 pub mod symbol;
+pub mod validation;
 
+pub use atomic_write::atomic_write;
 pub use design::{CheckProfile, Design, NetHandle, Unit, Voltage};
+pub use diagnostic_catalog::{
+    DiagnosticDefinition, all_diagnostic_definitions, diagnostic_definition,
+};
 pub use electrical::ElectricalClass;
 pub use error::{Diagnostic, DiagnosticSeverity, Error, ObjectRef, Result};
 pub use export::Exporter;
-pub use footprint::{Footprint, FootprintAsset, FootprintPads};
+pub use filename::validate_file_stem;
+pub use footprint::{
+    Footprint, FootprintAsset, FootprintDefinition, FootprintPads, FootprintSource,
+};
 pub use ir::{BOARD_IR_SCHEMA, BOARD_IR_VERSION, BoardIr};
-pub use model::{Board, ModuleId, PinRef, PinSpec, pin};
+pub use model::{Board, ModuleId, PartId, PinRef, PinSpec, pin};
 pub use rules::BoardRules;
-pub use spec::{Component, DecouplerPins, PartSpec, PartSpecBuilder, part};
+pub use spec::{Component, DecouplerPins, PartBuilder, PartSpec, PartSpecBuilder, part};
 pub use symbol::{SymbolKind, SymbolSide, SymbolSpec, sym};
+pub use validation::{ValidationProfile, ValidationReport};
 
 #[cfg(test)]
 mod tests {

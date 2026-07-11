@@ -8,6 +8,7 @@ use crate::ir::{
 };
 use crate::rules::BoardRules;
 use crate::symbol::{SymbolSide, SymbolSpec};
+use crate::{ValidationProfile, ValidationReport};
 
 use super::{ModuleId, Net, Part, PinRef};
 
@@ -39,8 +40,20 @@ impl Board {
         self.modules.values()
     }
 
+    /// Returns the parts on this board.
+    ///
+    /// `modules` remains available for compatibility with pre-0.3 callers.
+    pub fn parts(&self) -> impl Iterator<Item = &Part> {
+        self.modules()
+    }
+
     pub fn module(&self, refdes: &str) -> Option<&Part> {
         self.modules.get(refdes)
+    }
+
+    /// Looks up a part by reference designator.
+    pub fn part(&self, refdes: &str) -> Option<&Part> {
+        self.module(refdes)
     }
 
     pub fn nets(&self) -> impl Iterator<Item = &Net> {
@@ -200,21 +213,31 @@ impl Board {
     }
 
     pub fn check(&self) -> Result<()> {
-        let diagnostics = self.diagnostics();
-        if diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(Error::Validation(diagnostics))
-        }
+        self.validation_report(ValidationProfile::Prototype)
+            .into_result()
     }
 
     pub fn check_production(&self) -> Result<()> {
-        let diagnostics = self.production_diagnostics();
-        if diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(Error::Validation(diagnostics))
+        self.validation_report(ValidationProfile::Production)
+            .into_result()
+    }
+
+    /// Validates this board using a named policy and preserves every
+    /// diagnostic, including non-blocking warnings.
+    pub fn validation_report(&self, profile: ValidationProfile) -> ValidationReport {
+        let mut diagnostics = self.diagnostics();
+        match profile {
+            ValidationProfile::Draft => {
+                for diagnostic in &mut diagnostics {
+                    if matches!(diagnostic.code(), Some("net.too_few_connections")) {
+                        diagnostic.severity = crate::DiagnosticSeverity::Warning;
+                    }
+                }
+            }
+            ValidationProfile::Prototype => {}
+            ValidationProfile::Production => self.check_production_readiness(&mut diagnostics),
         }
+        ValidationReport::new(diagnostics)
     }
 
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
@@ -229,9 +252,9 @@ impl Board {
     }
 
     pub fn production_diagnostics(&self) -> Vec<Diagnostic> {
-        let mut diagnostics = self.diagnostics();
-        self.check_production_readiness(&mut diagnostics);
-        diagnostics
+        self.validation_report(ValidationProfile::Production)
+            .diagnostics()
+            .to_vec()
     }
 
     fn check_footprints(&self, diagnostics: &mut Vec<Diagnostic>) {

@@ -1,11 +1,14 @@
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     DuplicateModule(String),
     Validation(Vec<Diagnostic>),
+    Diagnostic(Box<Diagnostic>),
     Io(String),
 }
 
@@ -20,6 +23,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Error::Diagnostic(diagnostic) => write!(f, "{diagnostic}"),
             Error::Io(message) => write!(f, "{message}"),
         }
     }
@@ -33,7 +37,14 @@ impl From<std::io::Error> for Error {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl Error {
+    pub fn diagnostic(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Error::Diagnostic(Box::new(Diagnostic::coded(code, message)))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
     Error,
     Warning,
@@ -56,7 +67,8 @@ impl fmt::Display for DiagnosticSeverity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ObjectRef {
     Board { name: String },
     Module { refdes: String },
@@ -124,7 +136,7 @@ impl fmt::Display for ObjectRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub code: Option<String>,

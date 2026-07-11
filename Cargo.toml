@@ -12,12 +12,14 @@ members = [
     "crates/via-project",
     "crates/via-examples",
     "crates/via-cli",
+    "xtask",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.3.0"
 edition = "2024"
+rust-version = "1.88"
 license = "MPL-2.0"
 readme = "README.md"
 repository = "https://github.com/jz315/via-rs"

@@ -246,8 +246,7 @@ pub(super) fn render_pin_connection(
     )
 }
 
-pub(super) fn render_project_file(board: &Board) -> String {
-    let stem = board.name();
+pub(super) fn render_project_file(board: &Board, stem: &str) -> String {
     let rules = board.rules();
     format!(
         r#"{{

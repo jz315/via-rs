@@ -32,17 +32,17 @@ pub fn generic_i2c_sensor(refdes: &str) -> impl Component<Output = GenericI2cSen
         .pin(pin("SCL").logic("3V3").pad("3"))
         .pin(pin("SDA").logic("3V3").pad("4"))
         .production_note("Replace with a sourced sensor module or IC footprint before production")
-        .verify()
+        .needs_verification()
         .handle(|id| GenericI2cSensor { id })
 }
 
 pub fn i2c_sensor_breakout_board() -> Result<Board> {
     let mut d = Design::new("i2c_sensor_breakout").units(Unit::Mm);
 
-    let v3v3 = d.rail("3V3").dc(3.3);
+    let v3v3 = d.power("3V3", 3.3);
     let ground = d.ground("GND");
-    let scl = d.signal("I2C_SCL", "3V3");
-    let sda = d.signal("I2C_SDA", "3V3");
+    let scl = d.logic("I2C_SCL", "3V3");
+    let sda = d.logic("I2C_SDA", "3V3");
 
     let host = d.add(
         part("J1", "I2C host connector")
@@ -81,7 +81,7 @@ pub fn i2c_sensor_breakout_board() -> Result<Board> {
     d.connect(&scl, [host.pin("SCL"), sensor.scl(), scl_pullup.pin2()]);
     d.connect(&sda, [host.pin("SDA"), sensor.sda(), sda_pullup.pin2()]);
 
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 
 #[cfg(test)]

@@ -158,37 +158,43 @@ fn render_pcb_components(writer: &mut EpruWriter, board: &Board) {
         if let Some(footprint_name) = module.footprint_name() {
             pcb_attr(
                 writer,
-                &format!("{component_id}_footprint"),
-                &component_id,
-                3,
-                "Footprint",
-                &footprint_uuid(footprint_name),
-                None,
-                None,
-                false,
+                PcbAttribute {
+                    id: &format!("{component_id}_footprint"),
+                    parent_id: &component_id,
+                    layer_id: 3,
+                    key: "Footprint",
+                    value: &footprint_uuid(footprint_name),
+                    x: None,
+                    y: None,
+                    visible: false,
+                },
             );
         }
         pcb_attr(
             writer,
-            &format!("{component_id}_designator"),
-            &component_id,
-            3,
-            "Designator",
-            module.refdes(),
-            Some(placement.x - 55),
-            Some(placement.y - 80),
-            true,
+            PcbAttribute {
+                id: &format!("{component_id}_designator"),
+                parent_id: &component_id,
+                layer_id: 3,
+                key: "Designator",
+                value: module.refdes(),
+                x: Some(placement.x - 55),
+                y: Some(placement.y - 80),
+                visible: true,
+            },
         );
         pcb_attr(
             writer,
-            &format!("{component_id}_device"),
-            &component_id,
-            3,
-            "Device",
-            &device_uuid(module),
-            None,
-            None,
-            false,
+            PcbAttribute {
+                id: &format!("{component_id}_device"),
+                parent_id: &component_id,
+                layer_id: 3,
+                key: "Device",
+                value: &device_uuid(module),
+                x: None,
+                y: None,
+                visible: false,
+            },
         );
     }
 }
@@ -208,17 +214,28 @@ fn module_pad_nets(board: &Board, module: &Part) -> BTreeMap<String, String> {
     pad_nets
 }
 
-fn pcb_attr(
-    writer: &mut EpruWriter,
-    id: &str,
-    parent_id: &str,
+struct PcbAttribute<'a> {
+    id: &'a str,
+    parent_id: &'a str,
     layer_id: usize,
-    key: &str,
-    value: &str,
+    key: &'a str,
+    value: &'a str,
     x: Option<i32>,
     y: Option<i32>,
     visible: bool,
-) {
+}
+
+fn pcb_attr(writer: &mut EpruWriter, attribute: PcbAttribute<'_>) {
+    let PcbAttribute {
+        id,
+        parent_id,
+        layer_id,
+        key,
+        value,
+        x,
+        y,
+        visible,
+    } = attribute;
     writer.record_with_id(
         "ATTR",
         id,

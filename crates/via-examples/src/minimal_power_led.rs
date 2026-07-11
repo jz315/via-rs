@@ -3,9 +3,9 @@ use via::prelude::*;
 pub fn minimal_power_led_board() -> Result<Board> {
     let mut d = Design::new("minimal_power_led").units(Unit::Mm);
 
-    let v5 = d.rail("5V").dc(5.0);
+    let v5 = d.power("5V", 5.0);
     let ground = d.ground("GND");
-    let led_anode = d.signal("LED_A", "5V");
+    let led_anode = d.logic("LED_A", "5V");
 
     let input = d.add(
         part("J1", "5V input")
@@ -24,14 +24,14 @@ pub fn minimal_power_led_board() -> Result<Board> {
             .pin(pin("A").passive().pad("2"))
             .pin(pin("K").passive().pad("1"))
             .production_note("Verify LED color, polarity, and forward current before production")
-            .verify(),
+            .needs_verification(),
     )?;
 
     d.connect(&v5, [input.pin("5V"), resistor.pin1()]);
     d.connect(&led_anode, [resistor.pin2(), led.pin("A")]);
     d.connect(&ground, [input.pin("GND"), led.pin("K")]);
 
-    d.finish()
+    d.finish(ValidationProfile::Prototype)
 }
 
 #[cfg(test)]
